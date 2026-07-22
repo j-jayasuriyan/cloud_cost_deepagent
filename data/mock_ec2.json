@@ -1,0 +1,148 @@
+{
+  "instances": [
+    {
+      "instance_id": "i-0a1b2c3d4e5f60001",
+      "instance_type": "m5.2xlarge",
+      "state": "running",
+      "name": "prod-api-server-1",
+      "launch_time": "2024-08-01T00:00:00Z",
+      "availability_zone": "us-east-1a",
+      "platform": "linux",
+      "pricing_model": "on-demand",
+      "monthly_cost_usd": 277.60,
+      "cloudwatch_metrics": {
+        "avg_cpu_utilization_percent": 3.2,
+        "max_cpu_utilization_percent": 11.0,
+        "avg_network_in_mbps": 0.4,
+        "avg_network_out_mbps": 0.2
+      },
+      "tags": {"Environment": "prod", "Team": "backend"}
+    },
+    {
+      "instance_id": "i-0a1b2c3d4e5f60002",
+      "instance_type": "m5.2xlarge",
+      "state": "running",
+      "name": "prod-api-server-2",
+      "launch_time": "2024-08-01T00:00:00Z",
+      "availability_zone": "us-east-1b",
+      "platform": "linux",
+      "pricing_model": "on-demand",
+      "monthly_cost_usd": 277.60,
+      "cloudwatch_metrics": {
+        "avg_cpu_utilization_percent": 4.1,
+        "max_cpu_utilization_percent": 13.5,
+        "avg_network_in_mbps": 0.5,
+        "avg_network_out_mbps": 0.3
+      },
+      "tags": {"Environment": "prod", "Team": "backend"}
+    },
+    {
+      "instance_id": "i-0a1b2c3d4e5f60003",
+      "instance_type": "c5.4xlarge",
+      "state": "running",
+      "name": "data-processing-worker",
+      "launch_time": "2024-06-15T00:00:00Z",
+      "availability_zone": "us-east-1a",
+      "platform": "linux",
+      "pricing_model": "on-demand",
+      "monthly_cost_usd": 552.80,
+      "cloudwatch_metrics": {
+        "avg_cpu_utilization_percent": 6.8,
+        "max_cpu_utilization_percent": 22.0,
+        "avg_network_in_mbps": 1.2,
+        "avg_network_out_mbps": 0.8
+      },
+      "tags": {"Environment": "prod", "Team": "data"}
+    },
+    {
+      "instance_id": "i-0a1b2c3d4e5f60004",
+      "instance_type": "t3.xlarge",
+      "state": "running",
+      "name": "staging-web-server",
+      "launch_time": "2024-09-01T00:00:00Z",
+      "availability_zone": "us-east-1c",
+      "platform": "linux",
+      "pricing_model": "on-demand",
+      "monthly_cost_usd": 120.48,
+      "cloudwatch_metrics": {
+        "avg_cpu_utilization_percent": 1.1,
+        "max_cpu_utilization_percent": 4.2,
+        "avg_network_in_mbps": 0.05,
+        "avg_network_out_mbps": 0.02
+      },
+      "tags": {"Environment": "staging", "Team": "frontend"}
+    },
+    {
+      "instance_id": "i-0a1b2c3d4e5f60005",
+      "instance_type": "r5.4xlarge",
+      "state": "running",
+      "name": "ml-training-server",
+      "launch_time": "2024-07-10T00:00:00Z",
+      "availability_zone": "us-east-1a",
+      "platform": "linux",
+      "pricing_model": "on-demand",
+      "monthly_cost_usd": 808.80,
+      "cloudwatch_metrics": {
+        "avg_cpu_utilization_percent": 8.5,
+        "max_cpu_utilization_percent": 30.0,
+        "avg_network_in_mbps": 2.1,
+        "avg_network_out_mbps": 1.0
+      },
+      "tags": {"Environment": "prod", "Team": "ml"}
+    },
+    {
+      "instance_id": "i-0a1b2c3d4e5f60006",
+      "instance_type": "m5.xlarge",
+      "state": "stopped",
+      "name": "dev-test-box",
+      "launch_time": "2024-05-01T00:00:00Z",
+      "availability_zone": "us-east-1b",
+      "platform": "linux",
+      "pricing_model": "on-demand",
+      "monthly_cost_usd": 0.0,
+      "cloudwatch_metrics": {},
+      "tags": {"Environment": "dev", "Team": "qa"}
+    },
+    {
+      "instance_id": "i-0a1b2c3d4e5f60007",
+      "instance_type": "t3.medium",
+      "state": "running",
+      "name": "internal-tools",
+      "launch_time": "2024-03-15T00:00:00Z",
+      "availability_zone": "us-east-1a",
+      "platform": "linux",
+      "pricing_model": "on-demand",
+      "monthly_cost_usd": 30.37,
+      "cloudwatch_metrics": {
+        "avg_cpu_utilization_percent": 0.8,
+        "max_cpu_utilization_percent": 2.5,
+        "avg_network_in_mbps": 0.01,
+        "avg_network_out_mbps": 0.01
+      },
+      "tags": {"Environment": "prod", "Team": "devops"}
+    },
+    {
+      "instance_id": "i-0a1b2c3d4e5f60008",
+      "instance_type": "c5.2xlarge",
+      "state": "running",
+      "name": "batch-job-runner",
+      "launch_time": "2024-10-01T00:00:00Z",
+      "availability_zone": "us-east-1c",
+      "platform": "linux",
+      "pricing_model": "on-demand",
+      "monthly_cost_usd": 246.56,
+      "cloudwatch_metrics": {
+        "avg_cpu_utilization_percent": 5.5,
+        "max_cpu_utilization_percent": 18.0,
+        "avg_network_in_mbps": 0.8,
+        "avg_network_out_mbps": 0.4
+      },
+      "tags": {"Environment": "prod", "Team": "data"}
+    }
+  ],
+  "elastic_ips": [
+    {"allocation_id": "eipalloc-001", "public_ip": "52.1.2.3", "association_id": null, "name": "unused-eip-1", "monthly_cost_usd": 3.65},
+    {"allocation_id": "eipalloc-002", "public_ip": "52.1.2.4", "association_id": null, "name": "unused-eip-2", "monthly_cost_usd": 3.65},
+    {"allocation_id": "eipalloc-003", "public_ip": "52.1.2.5", "association_id": "eipassoc-001", "name": "prod-api-eip", "monthly_cost_usd": 0.0}
+  ]
+}

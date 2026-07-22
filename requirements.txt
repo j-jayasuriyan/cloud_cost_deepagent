@@ -1,0 +1,5 @@
+deepagents
+langchain-aws
+boto3
+python-dotenv
+rich

@@ -1,0 +1,154 @@
+{
+  "volumes": [
+    {
+      "volume_id": "vol-001aabbcc",
+      "volume_type": "gp2",
+      "size_gb": 500,
+      "state": "available",
+      "attached_to": null,
+      "name": "old-migration-data",
+      "create_time": "2024-01-15T00:00:00Z",
+      "availability_zone": "us-east-1a",
+      "monthly_cost_usd": 50.00,
+      "iops": 1500,
+      "throughput_mbps": null
+    },
+    {
+      "volume_id": "vol-002aabbcc",
+      "volume_type": "gp2",
+      "size_gb": 1000,
+      "state": "available",
+      "attached_to": null,
+      "name": "detached-backup-vol",
+      "create_time": "2024-03-10T00:00:00Z",
+      "availability_zone": "us-east-1b",
+      "monthly_cost_usd": 100.00,
+      "iops": 3000,
+      "throughput_mbps": null
+    },
+    {
+      "volume_id": "vol-003aabbcc",
+      "volume_type": "gp2",
+      "size_gb": 200,
+      "state": "in-use",
+      "attached_to": "i-0a1b2c3d4e5f60001",
+      "name": "prod-api-server-1-root",
+      "create_time": "2024-08-01T00:00:00Z",
+      "availability_zone": "us-east-1a",
+      "monthly_cost_usd": 20.00,
+      "iops": 600,
+      "throughput_mbps": null
+    },
+    {
+      "volume_id": "vol-004aabbcc",
+      "volume_type": "gp2",
+      "size_gb": 300,
+      "state": "in-use",
+      "attached_to": "i-0a1b2c3d4e5f60003",
+      "name": "data-worker-data",
+      "create_time": "2024-06-15T00:00:00Z",
+      "availability_zone": "us-east-1a",
+      "monthly_cost_usd": 30.00,
+      "iops": 900,
+      "throughput_mbps": null
+    },
+    {
+      "volume_id": "vol-005aabbcc",
+      "volume_type": "io1",
+      "size_gb": 100,
+      "state": "in-use",
+      "attached_to": "i-0a1b2c3d4e5f60005",
+      "name": "ml-training-fast-storage",
+      "create_time": "2024-07-10T00:00:00Z",
+      "availability_zone": "us-east-1a",
+      "monthly_cost_usd": 78.50,
+      "iops": 5000,
+      "throughput_mbps": null,
+      "actual_avg_iops_used": 180
+    },
+    {
+      "volume_id": "vol-006aabbcc",
+      "volume_type": "gp2",
+      "size_gb": 750,
+      "state": "available",
+      "attached_to": null,
+      "name": "archived-logs-volume",
+      "create_time": "2023-11-01T00:00:00Z",
+      "availability_zone": "us-east-1c",
+      "monthly_cost_usd": 75.00,
+      "iops": 2250,
+      "throughput_mbps": null
+    }
+  ],
+  "snapshots": [
+    {
+      "snapshot_id": "snap-001aabbcc",
+      "volume_id": "vol-deleted-001",
+      "volume_size_gb": 200,
+      "state": "completed",
+      "start_time": "2023-06-01T00:00:00Z",
+      "description": "manual backup before migration",
+      "associated_volume_exists": false,
+      "monthly_cost_usd": 10.00
+    },
+    {
+      "snapshot_id": "snap-002aabbcc",
+      "volume_id": "vol-deleted-002",
+      "volume_size_gb": 500,
+      "state": "completed",
+      "start_time": "2023-08-15T00:00:00Z",
+      "description": "pre-upgrade snapshot",
+      "associated_volume_exists": false,
+      "monthly_cost_usd": 25.00
+    },
+    {
+      "snapshot_id": "snap-003aabbcc",
+      "volume_id": "vol-deleted-003",
+      "volume_size_gb": 1000,
+      "state": "completed",
+      "start_time": "2023-09-20T00:00:00Z",
+      "description": "quarterly backup",
+      "associated_volume_exists": false,
+      "monthly_cost_usd": 50.00
+    },
+    {
+      "snapshot_id": "snap-004aabbcc",
+      "volume_id": "vol-003aabbcc",
+      "volume_size_gb": 200,
+      "state": "completed",
+      "start_time": "2025-01-01T00:00:00Z",
+      "description": "recent prod backup",
+      "associated_volume_exists": true,
+      "monthly_cost_usd": 3.00
+    }
+  ],
+  "amis": [
+    {
+      "image_id": "ami-001aabbcc",
+      "name": "old-app-server-v1.0",
+      "creation_date": "2023-04-01T00:00:00Z",
+      "state": "available",
+      "is_used_by_any_instance": false,
+      "snapshot_ids": ["snap-ami-001"],
+      "monthly_cost_usd": 8.00
+    },
+    {
+      "image_id": "ami-002aabbcc",
+      "name": "old-app-server-v1.5",
+      "creation_date": "2023-07-01T00:00:00Z",
+      "state": "available",
+      "is_used_by_any_instance": false,
+      "snapshot_ids": ["snap-ami-002"],
+      "monthly_cost_usd": 8.50
+    },
+    {
+      "image_id": "ami-003aabbcc",
+      "name": "current-app-server-v2.1",
+      "creation_date": "2025-01-01T00:00:00Z",
+      "state": "available",
+      "is_used_by_any_instance": true,
+      "snapshot_ids": ["snap-ami-003"],
+      "monthly_cost_usd": 8.50
+    }
+  ]
+}

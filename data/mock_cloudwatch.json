@@ -1,0 +1,124 @@
+{
+  "log_groups": [
+    {
+      "log_group_name": "/aws/lambda/prod-image-processor",
+      "retention_days": null,
+      "stored_bytes": 42949672960,
+      "stored_gb": 40.0,
+      "monthly_storage_cost_usd": 20.00,
+      "monthly_ingestion_gb": 8.5,
+      "monthly_ingestion_cost_usd": 4.25
+    },
+    {
+      "log_group_name": "/aws/lambda/prod-report-generator",
+      "retention_days": null,
+      "stored_bytes": 107374182400,
+      "stored_gb": 100.0,
+      "monthly_storage_cost_usd": 50.00,
+      "monthly_ingestion_gb": 15.0,
+      "monthly_ingestion_cost_usd": 7.50
+    },
+    {
+      "log_group_name": "/aws/rds/instance/prod-mysql-primary/general",
+      "retention_days": null,
+      "stored_bytes": 322122547200,
+      "stored_gb": 300.0,
+      "monthly_storage_cost_usd": 150.00,
+      "monthly_ingestion_gb": 45.0,
+      "monthly_ingestion_cost_usd": 22.50
+    },
+    {
+      "log_group_name": "/aws/rds/instance/prod-mysql-primary/slowquery",
+      "retention_days": null,
+      "stored_bytes": 53687091200,
+      "stored_gb": 50.0,
+      "monthly_storage_cost_usd": 25.00,
+      "monthly_ingestion_gb": 6.0,
+      "monthly_ingestion_cost_usd": 3.00
+    },
+    {
+      "log_group_name": "/ecs/prod-app-cluster",
+      "retention_days": 365,
+      "stored_bytes": 214748364800,
+      "stored_gb": 200.0,
+      "monthly_storage_cost_usd": 100.00,
+      "monthly_ingestion_gb": 30.0,
+      "monthly_ingestion_cost_usd": 15.00
+    },
+    {
+      "log_group_name": "/aws/apigateway/prod-api",
+      "retention_days": null,
+      "stored_bytes": 161061273600,
+      "stored_gb": 150.0,
+      "monthly_storage_cost_usd": 75.00,
+      "monthly_ingestion_gb": 22.0,
+      "monthly_ingestion_cost_usd": 11.00
+    },
+    {
+      "log_group_name": "/dev/application/debug",
+      "retention_days": null,
+      "stored_bytes": 536870912000,
+      "stored_gb": 500.0,
+      "monthly_storage_cost_usd": 250.00,
+      "monthly_ingestion_gb": 80.0,
+      "monthly_ingestion_cost_usd": 40.00
+    },
+    {
+      "log_group_name": "/aws/lambda/old-cleanup-job",
+      "retention_days": null,
+      "stored_bytes": 1073741824,
+      "stored_gb": 1.0,
+      "monthly_storage_cost_usd": 0.50,
+      "monthly_ingestion_gb": 0.01,
+      "monthly_ingestion_cost_usd": 0.01
+    }
+  ],
+  "custom_metrics": [
+    {
+      "namespace": "CustomApp/Performance",
+      "metric_count": 120,
+      "monthly_cost_usd": 36.00,
+      "last_data_point_days_ago": 92,
+      "description": "Legacy performance metrics from deprecated service"
+    },
+    {
+      "namespace": "CustomApp/BusinessMetrics",
+      "metric_count": 45,
+      "monthly_cost_usd": 13.50,
+      "last_data_point_days_ago": 3,
+      "description": "Active business KPI metrics"
+    }
+  ],
+  "dashboards": [
+    {
+      "dashboard_name": "prod-overview",
+      "monthly_cost_usd": 3.00,
+      "last_viewed_days_ago": 1
+    },
+    {
+      "dashboard_name": "old-deprecated-dashboard",
+      "monthly_cost_usd": 3.00,
+      "last_viewed_days_ago": 180
+    }
+  ],
+  "alarms": [
+    {
+      "alarm_name": "prod-cpu-high",
+      "state": "OK",
+      "monthly_cost_usd": 0.10,
+      "metric_exists": true
+    },
+    {
+      "alarm_name": "orphaned-alarm-1",
+      "state": "INSUFFICIENT_DATA",
+      "monthly_cost_usd": 0.10,
+      "metric_exists": false
+    },
+    {
+      "alarm_name": "orphaned-alarm-2",
+      "state": "INSUFFICIENT_DATA",
+      "monthly_cost_usd": 0.10,
+      "metric_exists": false
+    }
+  ]
+}
