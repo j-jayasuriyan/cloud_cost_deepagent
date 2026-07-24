@@ -30,24 +30,101 @@ This document explains the internal implementation: how agents are built, how da
 
 The system is a **hierarchical multi-agent pipeline**. A single orchestrator LLM plans and delegates work to 8 specialist agents. Each specialist calls Python functions (tools) that query AWS or return mock data. A final report agent consolidates all findings into JSON, HTML, and Markdown.
 
+### Architecture Diagram
+
 ```
-User
-  └── main.py (CLI + streaming loop)
-        └── Orchestrator Agent (LLM)
-              ├── task("ec2-analyst")  →  EC2 Agent (LLM + tools)
-              ├── task("ebs-analyst")  →  EBS Agent (LLM + tools)
-              ├── task("rds-analyst")  →  RDS Agent (LLM + tools)
-              ├── task("s3-analyst")   →  S3 Agent  (LLM + tools)
-              ├── task("network-analyst") → Network Agent (LLM + tools)
-              ├── task("savings-analyst") → Savings Agent (LLM + tools)
-              ├── task("lambda-analyst")  → Lambda Agent  (LLM + tools)
-              ├── task("cloudwatch-analyst") → CloudWatch Agent (LLM + tools)
-              └── task("report-agent") →  Report Agent (LLM + report tools)
-                    ├── save_json_report()  → output/<timestamp>/report.json
-                    └── save_html_report()  → output/<timestamp>/report.html
-                          ↓
-                    main.py writes → output/<timestamp>/report.md
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                          ENTRY POINT  (main.py)                             ║
+║  CLI: python3 main.py [--mock | --live] [--debug]                           ║
+║  • Loads .env  • Sets AWS_DATA_MODE  • Creates output/<timestamp>/          ║
+║  • In live mode: calls STS → sets AWS_ACCOUNT_ID                            ║
+╚══════════════════════════╦═══════════════════════════════════════════════════╝
+                           ║  orchestrator.stream(USER_PROMPT, stream_mode="messages")
+                           ▼
+╔══════════════════════════════════════════════════════════════════════════════╗
+║              ORCHESTRATOR AGENT  (agents/orchestrator.py)                   ║
+║              Model: Claude Haiku 4.5 via Amazon Bedrock                     ║
+║              Built with: create_deep_agent()  [DeepAgents / LangGraph]      ║
+║                                                                              ║
+║  Built-in tools:                                                             ║
+║    write_todos  ─── Plans task list before acting (internal, ~30–60s)       ║
+║    task()       ─── Delegates to a named sub-agent (blocks until done)      ║
+╚══════╦═══════╦══════╦═══════╦═══════╦════════╦════════╦═══════╦════════════╝
+       ║       ║      ║       ║       ║        ║        ║       ║
+Phase 1: Compute & Database          Phase 2: Storage & Commitments    Phase 3
+       ║       ║      ║       ║       ║        ║        ║       ║
+       ▼       ▼      ▼       ▼       ▼        ▼        ▼       ▼
+   ┌───────┐┌──────┐┌─────┐┌──────┐┌───────┐┌──────┐┌──────┐┌────────────┐
+   │  EC2  ││ RDS  ││ EBS ││  S3  ││Network││Saving││Lambda││ CloudWatch │
+   │ Agent ││Agent ││Agent││Agent ││ Agent ││ Agent││Agent ││   Agent    │
+   └───┬───┘└──┬───┘└──┬──┘└──┬───┘└───┬───┘└──┬───┘└──┬───┘└─────┬──────┘
+       │       │       │      │        │       │       │           │
+       ▼       ▼       ▼      ▼        ▼       ▼       ▼           ▼
+   ┌─────────────────────────────── TOOL LAYER (tools/*.py) ──────────────────┐
+   │                                                                           │
+   │  Each agent calls its own tools. All tools follow the same pattern:      │
+   │                                                                           │
+   │  def get_xyz() -> str:                                                    │
+   │      return _live_xyz() if USE_LIVE else json.dumps(_MOCK["xyz"])        │
+   │                    │                              │                       │
+   │                    ▼                              ▼                       │
+   │            ┌──────────────┐              ┌──────────────┐                │
+   │            │  boto3 calls │              │  Mock JSON   │                │
+   │            │  (AWS APIs)  │              │  data/       │                │
+   │            │              │              │  mock_*.json │                │
+   │            │ • describe_* │              └──────────────┘                │
+   │            │ • list_*     │                                               │
+   │            │ • get_*      │                                               │
+   │            │ • CloudWatch │                                               │
+   │            │   batch      │                                               │
+   │            └──────┬───────┘                                               │
+   │                   │                                                       │
+   │            ┌──────▼───────────────────────────────────────┐              │
+   │            │         aws_client.py  (shared layer)         │              │
+   │            │  USE_LIVE  _REGION  get_client()              │              │
+   │            │  get_cw_metrics_batch()  (up to 500/call)     │              │
+   │            └──────────────────────────────────────────────┘              │
+   └───────────────────────────────────────────────────────────────────────────┘
+       │       │       │      │        │       │       │           │
+       └───────┴───────┴──────┴────────┴───────┴───────┴───────────┘
+                                       │
+                         JSON findings per service
+                                       │
+                                       ▼
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                  REPORT AGENT  (agents/report_agent.py)                     ║
+║                                                                              ║
+║  Receives: combined JSON findings from all 8 specialist agents              ║
+║                                                                              ║
+║  Step 1: save_json_report(findings_json)                                    ║
+║           └─→  output/<timestamp>/report.json                               ║
+║                                                                              ║
+║  Step 2: LLM writes Markdown report (streamed back to main.py)             ║
+║                                                                              ║
+║  Step 3: save_html_report(markdown)                                         ║
+║           └─→  output/<timestamp>/report.html  (dark-themed, self-contained)║
+╚══════════════════════════╦═══════════════════════════════════════════════════╝
+                           ║
+                           ▼
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                    OUTPUT  (output/<timestamp>/)                             ║
+║                                                                              ║
+║   report.md    ← full Markdown, written by main.py from streamed chunks     ║
+║   report.html  ← dark-themed HTML, written by save_html_report()           ║
+║   report.json  ← structured findings JSON, written by save_json_report()   ║
+║                                                                              ║
+║   Each run gets its own folder  →  previous runs never overwritten          ║
+╚══════════════════════════════════════════════════════════════════════════════╝
 ```
+
+### Execution Phases
+
+| Phase | Agents | Focus |
+|---|---|---|
+| Phase 1 — Compute & Database | EC2 → RDS → EBS | Largest spend drivers — instance rightsizing, DB waste, storage artifacts |
+| Phase 2 — Storage & Commitments | S3 → Network → Savings | Lifecycle policies, NAT/LB waste, RI/SP coverage gaps |
+| Phase 3 — Serverless & Observability | Lambda → CloudWatch | Memory rightsizing, deprecated runtimes, log retention |
+| Phase 4 — Synthesis | Report Agent | Consolidates all findings, writes JSON + HTML + Markdown |
 
 ---
 
@@ -588,36 +665,99 @@ optimal_mb = min(
 
 ## 14. Data Flow — End to End
 
-```
-main.py
-│
-├── Set AWS_DATA_MODE, REPORT_OUTPUT_DIR in env
-├── (live) STS → get account ID → set AWS_ACCOUNT_ID in env
-│
-└── orchestrator.stream(USER_PROMPT)
-      │
-      ├── [write_todos]                          ← LLM plans its task list
-      │
-      ├── task("ec2-analyst", "Analyze EC2...")
-      │     └── EC2 LLM
-      │           ├── get_ec2_inventory()        → boto3 describe_instances OR mock JSON
-      │           ├── analyze_ec2_rightsizing()  → CloudWatch batch → _run_ec2_analysis()
-      │           └── get_elastic_ips()          → boto3 describe_addresses OR mock JSON
-      │                 └── returns JSON findings string
-      │
-      ├── task("rds-analyst", ...) → similar pattern
-      ├── task("ebs-analyst", ...) → similar pattern
-      │   ... (5 more specialists)
-      │
-      └── task("report-agent", findings_json)
-            └── Report LLM
-                  ├── save_json_report(findings_json)   → output/<ts>/report.json
-                  ├── [writes Markdown in LLM response]
-                  └── save_html_report(markdown)        → output/<ts>/report.html
+The sequence below shows the exact order of operations for a single run, including which process/module is active at each step and what data is produced.
 
-main.py receives final_text_parts (streamed Markdown)
-  └── writes → output/<ts>/report.md
-  └── (fallback) save_html_report() if HTML not already written
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  STARTUP  (main.py — module level, before run())                            │
+│                                                                             │
+│  1. load_dotenv()           → os.environ ← .env file values                │
+│  2. parse CLI args          → DATA_MODE = "live" | "mock"                  │
+│  3. os.environ["AWS_DATA_MODE"] = DATA_MODE                                │
+│  4. create _RUN_DIR = output/20260724_143512/   (mkdir)                    │
+│  5. os.environ["REPORT_OUTPUT_DIR"] = str(_RUN_DIR)                        │
+└────────────────────────────────┬────────────────────────────────────────────┘
+                                 │
+                  ┌──────────────▼──────────────┐
+                  │  LIVE MODE ONLY             │
+                  │  STS GetCallerIdentity()    │
+                  │  → os.environ["AWS_ACCOUNT_ID"]  │
+                  └──────────────┬──────────────┘
+                                 │
+┌────────────────────────────────▼────────────────────────────────────────────┐
+│  AGENT INITIALISATION  (main.py → run())                                    │
+│                                                                             │
+│  from agents.orchestrator import build_orchestrator                         │
+│    → imports config.py          (reads AWS_ACCOUNT_ID, AWS_DEFAULT_REGION) │
+│    → imports all 8 agent files  (registers tools + system prompts)         │
+│    → imports all tool files     (USE_LIVE set, _MOCK loaded from data/)    │
+│  orchestrator = build_orchestrator()   → LangGraph compiled state machine  │
+└────────────────────────────────┬────────────────────────────────────────────┘
+                                 │
+┌────────────────────────────────▼────────────────────────────────────────────┐
+│  STREAMING LOOP  orchestrator.stream(USER_PROMPT, stream_mode="messages")   │
+│                                                                             │
+│  ┌─ Orchestrator LLM turn ──────────────────────────────────────────────┐  │
+│  │  tool_call: write_todos(...)   ← internal planning, ~30–60s         │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  ┌─ Phase 1: Compute & Database ────────────────────────────────────────┐  │
+│  │                                                                       │  │
+│  │  tool_call: task("ec2-analyst", ...)                                 │  │
+│  │    └── EC2 Agent LLM                                                 │  │
+│  │          get_ec2_inventory()                                         │  │
+│  │            ├── LIVE: ec2.describe_instances() + CW batch            │  │
+│  │            └── MOCK: data/mock_ec2.json → _MOCK["instances"]        │  │
+│  │          analyze_ec2_rightsizing(instance_id)   [called per instance]│  │
+│  │            └── _run_ec2_analysis() → savings estimates              │  │
+│  │          get_elastic_ips()                                           │  │
+│  │            ├── LIVE: ec2.describe_addresses()                       │  │
+│  │            └── MOCK: _MOCK["elastic_ips"]                           │  │
+│  │          → returns JSON findings string to orchestrator             │  │
+│  │                                                                       │  │
+│  │  tool_call: task("rds-analyst", ...)    ← same pattern              │  │
+│  │  tool_call: task("ebs-analyst", ...)    ← same pattern              │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  ┌─ Phase 2: Storage & Commitments ─────────────────────────────────────┐  │
+│  │  tool_call: task("s3-analyst", ...)                                  │  │
+│  │  tool_call: task("network-analyst", ...)                             │  │
+│  │  tool_call: task("savings-analyst", ...)   ← Cost Explorer API      │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  ┌─ Phase 3: Serverless & Observability ────────────────────────────────┐  │
+│  │  tool_call: task("lambda-analyst", ...)                              │  │
+│  │  tool_call: task("cloudwatch-analyst", ...)                          │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  ┌─ Phase 4: Synthesis ──────────────────────────────────────────────────┐  │
+│  │  tool_call: task("report-agent", combined_findings_json)             │  │
+│  │    └── Report Agent LLM                                              │  │
+│  │          save_json_report(findings_json)                             │  │
+│  │            └──→ output/<timestamp>/report.json                       │  │
+│  │          [LLM writes Markdown text — streamed as AIMessageChunks]   │  │
+│  │          save_html_report(markdown)                                  │  │
+│  │            └──→ output/<timestamp>/report.html                       │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  Each AIMessageChunk → _extract_text() → final_text_parts list            │
+└────────────────────────────────┬────────────────────────────────────────────┘
+                                 │
+┌────────────────────────────────▼────────────────────────────────────────────┐
+│  OUTPUT PERSISTENCE  (main.py — after loop ends)                            │
+│                                                                             │
+│  final_message = "".join(final_text_parts)                                 │
+│  (_RUN_DIR / "report.md").write_text(final_message)                        │
+│                                                                             │
+│  if not (_RUN_DIR / "report.html").exists():    ← fallback only            │
+│      save_html_report(final_message)                                        │
+│                                                                             │
+│  Prints paths:                                                              │
+│    Run dir:  output/20260724_143512/                                        │
+│    Markdown: output/20260724_143512/report.md                              │
+│    HTML:     output/20260724_143512/report.html                            │
+│    JSON:     output/20260724_143512/report.json                            │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
