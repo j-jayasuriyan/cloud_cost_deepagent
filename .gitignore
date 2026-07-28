@@ -33,3 +33,7 @@ Thumbs.db
 # LangSmith / LangChain cache
 .langchain.db
 langchain_cache/
+
+# Chat history and LangGraph checkpoint databases
+chat_history.db
+langgraph.db

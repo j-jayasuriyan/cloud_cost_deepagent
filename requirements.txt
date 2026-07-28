@@ -2,4 +2,7 @@ deepagents
 langchain-aws
 boto3
 python-dotenv
-rich
+fastapi
+uvicorn
+langgraph-checkpoint-sqlite
+aiosqlite

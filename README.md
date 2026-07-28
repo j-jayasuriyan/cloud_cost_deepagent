@@ -63,16 +63,9 @@ AWS_DEFAULT_REGION=us-east-1
 
 ## Running
 
-**Mock mode** — uses bundled sample data, no AWS credentials needed:
+Query your real AWS account:
 ```bash
 python3 main.py
-# or
-python3 main.py --mock
-```
-
-**Live mode** — queries your real AWS account:
-```bash
-python3 main.py --live
 ```
 
 **Debug mode** — prints raw stream chunk types (useful for troubleshooting):
@@ -139,7 +132,6 @@ LANGCHAIN_PROJECT=cloud-cost-advisor
 │   ├── savings_tools.py
 │   ├── report_tools.py      # JSON + HTML report writers
 │   └── cost_calculator.py   # Shared pricing helpers
-├── data/                    # Mock JSON fixtures (used in --mock mode)
 ├── requirements.txt
 ├── .env.example
 └── .gitignore
