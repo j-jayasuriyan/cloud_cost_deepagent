@@ -19,24 +19,28 @@ Internal implementation reference: architecture, data flow, streaming, and desig
 11. [Session Persistence](#11-session-persistence)
 12. [Environment Variables](#12-environment-variables)
 13. [Error Handling](#13-error-handling)
+14. [Cost Optimization Panel](#14-cost-optimization-panel)
 
 ---
 
 ## 1. System Overview
 
-A conversational chat interface for querying any AWS account data — costs, resources, usage, security, and trends. The user types a question; the agent calls live AWS APIs and streams the answer back.
+A split-panel web app for AWS cost intelligence. The left panel is a conversational chat interface where the user can ask any question about their AWS account. The right panel is a cost optimization dashboard that runs a structured analysis on demand and displays actionable recommendations with visualizations.
 
 ### Architecture
 
 ```
 Browser (static/index.html)
-    │  POST /chat  (SSE stream)
+    │  POST /chat            (SSE — chat responses)
+    │  POST /analysis/run    (SSE — optimization analysis)
+    │  GET  /analysis        (current analysis state)
     │  GET  /sessions, /sessions/{id}/messages
     │  DELETE /sessions/{id}, /sessions
     ▼
 FastAPI  (server.py)
     │  lifespan: STS → account context, AsyncSqliteSaver, build_chat_agent()
-    │  /chat → SSE event_stream → agent.astream()
+    │  /chat          → SSE event_stream → agent.astream()
+    │  /analysis/run  → SSE stream()    → agent.astream() on fresh thread
     ▼
 DeepAgent  (agents/chat_agent.py)
     │  create_deep_agent(model, tools, checkpointer, system_prompt)
@@ -199,7 +203,9 @@ Runs once at startup:
 | `GET` | `/sessions/{id}/messages` | Messages for one session |
 | `DELETE` | `/sessions/{id}` | Delete one session from both DBs |
 | `DELETE` | `/sessions` | Delete all sessions from both DBs |
-| `POST` | `/chat` | SSE stream — runs the agent |
+| `POST` | `/chat` | SSE stream — runs the agent for chat |
+| `GET` | `/analysis` | Returns current analysis state (`status`, `result`, `updated_at`, `logs`) |
+| `POST` | `/analysis/run` | SSE stream — runs the optimization analysis agent |
 
 ### `/chat` — SSE stream
 
@@ -236,7 +242,9 @@ Both `_delete_lg_thread` and `_delete_lg_all` are fully wrapped in `try/except` 
 
 ## 8. Chat History — `chat_db.py`
 
-Manages `chat_history.db` with two tables:
+Manages `chat_history.db`, stored in the **project root** (same directory as `server.py`). Full path at runtime: `<project_root>/chat_history.db`.
+
+Two tables:
 
 ```sql
 sessions (thread_id PK, title, created_at, last_active)
@@ -261,9 +269,16 @@ Tables are initialised on import via `init_db()`.
 
 Single-file vanilla JS app — no build step, no external dependencies.
 
+### Layout
+
+Two-panel split (`#main-split`, CSS `display: flex`):
+
+- **Left panel** (`#chat-panel`, `flex: 1`) — conversational chat with history sidebar
+- **Right panel** (`#right-panel`, `width: 50%`) — cost optimization dashboard (see §14)
+
 ### Credential check on load
 
-Calls `GET /status` before showing the chat UI. On failure, shows an error banner with remediation steps and disables the input. On success, shows account ID + region in the header.
+Calls `GET /status` before showing the chat UI. On failure, shows an error banner with remediation steps and disables the input. On success, shows account ID + region in the header, then immediately calls `loadAnalysis()` to restore any previously cached analysis result.
 
 ### Chat flow
 
@@ -299,6 +314,8 @@ All events are `data: <json>\n\n` with this shape:
 {"type": "<event>", "data": "<string>"}
 ```
 
+### `/chat` events
+
 | `type` | `data` |
 |---|---|
 | `text` | Partial assistant text token |
@@ -308,18 +325,33 @@ All events are `data: <json>\n\n` with this shape:
 | `session_corrupted` | New `thread_id` to switch to |
 | `error` | Error message (truncated to 500 chars) |
 
+### `/analysis/run` events
+
+| `type` | `data` |
+|---|---|
+| `status` | `"running"` |
+| `log` | Tool call label, e.g. `"ce.get_cost_and_usage"`, `"execute_python"` |
+| `tool_end` | Tool name (`"call_aws_api"` or `"execute_python"`) |
+| `result` | JSON string of the full analysis result |
+| `error` | Error message (truncated to 300 chars) |
+| `done` | `""` |
+
 ---
 
 ## 11. Session Persistence
 
 ### Two databases
 
-| DB | Format | Managed by | Purpose |
-|---|---|---|---|
-| `langgraph.db` | SQLite (WAL) | `AsyncSqliteSaver` | Agent message history + tool call checkpoints per `thread_id` |
-| `chat_history.db` | SQLite | `chat_db.py` | Session list + message log for the history panel |
+Both files live in the **project root** alongside `server.py`:
 
-`langgraph.db` is the agent's memory — it contains the full conversation including tool call/result pairs. `chat_history.db` stores only user/assistant text for display in the history panel.
+| File | Format | Managed by | Purpose |
+|---|---|---|---|
+| `<project_root>/langgraph.db` | SQLite (WAL) | `AsyncSqliteSaver` | Agent message history + tool call checkpoints per `thread_id` |
+| `<project_root>/chat_history.db` | SQLite | `chat_db.py` | Session list + message log for the history panel |
+
+`langgraph.db` is the agent's memory — it contains the full conversation including tool call/result pairs, used by LangGraph to resume threads. `chat_history.db` stores only user/assistant text for display in the history panel sidebar.
+
+Both files are created automatically on first run if they don't exist. They are intentionally excluded from version control (listed in `.gitignore`) since they contain account-specific conversation data.
 
 ### Thread IDs
 
@@ -370,3 +402,103 @@ The server detects this, generates a new thread ID, and yields `session_corrupte
 ### Credential expiry
 
 `GET /status` is called on page load. If STS returns `ExpiredTokenException` or similar, the UI shows an error banner with instructions to refresh credentials and restart the server.
+
+---
+
+## 14. Cost Optimization Panel
+
+The right panel (`#right-panel`) runs a structured analysis of the current AWS account on demand and renders the results as a visual dashboard.
+
+### State machine
+
+`_ANALYSIS` is a module-level dict in `server.py`:
+
+```python
+{
+    "status":     "idle | running | done | error",
+    "result":     None | dict,    # parsed JSON from the agent
+    "updated_at": None | str,     # ISO-8601 UTC timestamp
+    "logs":       list[str],      # last 30 tool call labels
+}
+```
+
+State persists in memory for the lifetime of the server process. `GET /analysis` always returns the current state, so a page refresh can restore the last result without re-running.
+
+### Analysis prompt — `_build_analysis_prompt()`
+
+Built fresh on each `/analysis/run` call (so dates are always current). Steps the agent is instructed to follow:
+
+1. `ce.get_cost_and_usage` — current month MTD (Start=`YYYY-MM-01`, End=today)
+2. `ce.get_cost_and_usage` — previous month (Start=`prev-YYYY-MM-01`, End=`YYYY-MM-01`)
+3. `ec2.describe_instances`
+4. `ec2.describe_volumes`
+5. `rds.describe_db_instances`
+6. `elbv2.describe_load_balancers`
+7. `ce.get_savings_plans_purchase_recommendation`
+8. `execute_python` — compile everything and `print()` a single JSON object
+
+The agent uses a fresh `thread_id` (`"analysis-<8hex>"`) for each run so it never inherits chat history.
+
+### Analysis result schema
+
+```json
+{
+  "period":                    "YYYY-MM",
+  "is_partial":                true,
+  "total_monthly_spend_usd":   0.0,
+  "projected_end_usd":         0.0,
+  "previous_month_period":     "YYYY-MM",
+  "previous_month_usd":        0.0,
+  "potential_monthly_savings_usd": 0.0,
+  "spend_by_service": [
+    { "service": "Amazon EC2", "spend_usd": 0.0 }
+  ],
+  "recommendations": [
+    {
+      "category":   "EC2 | EBS | RDS | S3 | Network | Savings",
+      "severity":   "high | medium | low",
+      "title":      "...",
+      "description":"...",
+      "estimated_monthly_savings_usd": 0.0,
+      "resource_count": 0,
+      "action":     "..."
+    }
+  ]
+}
+```
+
+`is_partial` is `true` when the current month is still in progress (today is not the last day). When `true`, `total_monthly_spend_usd` is the MTD spend and `projected_end_usd` is a linear projection (`mtd / days_elapsed * days_in_month`).
+
+### Result extraction — `_parse_analysis_json()`
+
+Tries three strategies (in order) to find valid JSON in the agent's output:
+
+1. Direct `json.loads` of the raw text (works when `execute_python` prints clean JSON)
+2. ` ```json ... ``` ` code fence extraction
+3. Regex for a trailing JSON object containing `"period"`
+
+`execute_python` stdout is tried first (reversed, so most recent call wins); then the full accumulated AIMessage text as a fallback.
+
+### Frontend rendering
+
+The right panel has four view states managed by `setRpState(state)`:
+
+| State | Elements shown |
+|---|---|
+| `idle` | `#rp-idle` — placeholder with call-to-action |
+| `running` | `#rp-running` — animated progress log |
+| `done` | `#rp-result` — full dashboard |
+| `error` | `#rp-error` — error message |
+
+**Progress log**: each `log` SSE event appends a row with a spinner; each `tool_end` for `call_aws_api` or `execute_python` advances a done-counter, turning the oldest pending spinner to ✓. Built-in DeepAgent tools (`write_todos`, `task`, etc.) emit `tool_end` but are filtered out so they don't miscount.
+
+**KPI tiles** — built dynamically by `renderAnalysis()`:
+
+- *Partial month*: 2×2 grid — "July 2026 (MTD)" / "Projected End of Month" / "June 2026" / "Potential Savings · July 2026"
+- *Complete month*: 3-column row — "July 2026" / "June 2026" / "Potential Savings · July 2026"
+
+Period strings (e.g. `"2026-07"`) are formatted client-side by `_formatPeriod()` → `"July 2026"`. No formatting dependency on the agent output.
+
+**Horizontal bars**: top 8 services by spend, sorted descending, width proportional to the largest service's spend. Single sequential blue (`#3987e5`) — magnitude comparison within one dimension.
+
+**Recommendation cards**: sorted by estimated savings descending. Left border and badge colored by severity using the fixed status palette: `#d03b3b` (high ⚠), `#fab219` (medium ●), `#0ca30c` (low ◇). Badge always carries both icon and text label (never color alone).

@@ -229,6 +229,7 @@
       gap: 10px;
       align-items: flex-end;
       flex-shrink: 0;
+      margin-top: auto;
     }
     #input {
       flex: 1;
@@ -466,6 +467,174 @@
       color: var(--muted);
       font-size: 13px;
     }
+
+    /* ── Split layout ── */
+    #main-split {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    #chat-panel {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      border-right: 1px solid var(--border);
+    }
+
+    #right-panel {
+      width: 50%;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--surface);
+    }
+
+    /* ── Right panel ── */
+    .rp-header {
+      display: flex;
+      align-items: center;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .rp-title { display: flex; flex-direction: column; gap: 1px; }
+    .rp-title > span:first-child { font-size: 13px; font-weight: 600; color: var(--text); }
+    .rp-period { font-size: 11px; color: var(--muted); }
+    .rp-controls { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+    .rp-updated { font-size: 11px; color: var(--muted); }
+    .rp-status  { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); }
+    .rp-status-dot {
+      width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+    }
+    .rp-status-dot.idle    { background: var(--muted); }
+    .rp-status-dot.running { background: var(--accent); animation: pulse 1s infinite; }
+    .rp-status-dot.done    { background: #0ca30c; }
+    .rp-status-dot.error   { background: var(--error); }
+    .rp-refresh {
+      display: flex; align-items: center; gap: 5px;
+      background: none; border: 1px solid var(--border);
+      color: var(--muted); font-size: 11px;
+      padding: 5px 10px; border-radius: 6px;
+      cursor: pointer; transition: all .15s; font-family: inherit;
+    }
+    .rp-refresh:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    .rp-refresh:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .rp-body {
+      flex: 1; overflow-y: auto; padding: 16px;
+      display: flex; flex-direction: column;
+    }
+    .rp-body::-webkit-scrollbar { width: 6px; }
+    .rp-body::-webkit-scrollbar-track { background: transparent; }
+    .rp-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* Idle */
+    .rp-idle {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 12px; color: var(--muted); text-align: center; padding: 32px;
+    }
+    .rp-idle-icon { font-size: 40px; }
+    .rp-idle-text { font-size: 13px; line-height: 1.6; max-width: 260px; }
+
+    /* Running */
+    .rp-running { display: none; flex-direction: column; gap: 12px; }
+    .rp-running-title { font-size: 13px; color: var(--muted); font-style: italic; }
+    .rp-log { display: flex; flex-direction: column; gap: 6px; }
+    .rp-log-entry { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+    .rp-log-entry.done   { color: #898781; }
+    .rp-log-entry.active { color: var(--text); }
+    .rp-log-check { color: #0ca30c; font-size: 13px; width: 14px; flex-shrink: 0; }
+    .rp-log-spin  { width: 14px; flex-shrink: 0; display: flex; align-items: center; }
+    .rp-log-spin .spin { width: 10px; height: 10px; border-width: 2px; }
+
+    /* Error */
+    .rp-error {
+      display: none; flex-direction: column;
+      align-items: center; gap: 10px;
+      padding: 24px; text-align: center;
+    }
+    .rp-error-icon { font-size: 28px; }
+    .rp-error-msg  { font-size: 12px; color: var(--error); max-width: 280px; line-height: 1.6; }
+
+    /* Result */
+    .rp-result { display: none; flex-direction: column; }
+
+    /* KPI row */
+    .rp-kpi-row {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 8px; margin-bottom: 20px;
+    }
+    .rp-kpi {
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 8px; padding: 10px 12px;
+    }
+    .rp-kpi-label {
+      font-size: 10px; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px;
+    }
+    .rp-kpi-value {
+      font-size: 18px; font-weight: 700; color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+    .rp-kpi-value.savings { color: #0ca30c; }
+    .rp-kpi-value.pct     { color: var(--accent); }
+    .rp-kpi-sub { font-size: 10px; color: var(--muted); margin-top: 3px; }
+
+    /* Section header */
+    .rp-section-title {
+      font-size: 10px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.6px; color: var(--muted); margin: 4px 0 10px;
+    }
+
+    /* Horizontal bars (sequential blue — magnitude comparison) */
+    .rp-bars { display: flex; flex-direction: column; gap: 7px; margin-bottom: 20px; }
+    .rp-bar-row { display: flex; align-items: center; gap: 8px; }
+    .rp-bar-label {
+      width: 110px; flex-shrink: 0; font-size: 11px; color: var(--text);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .rp-bar-track {
+      flex: 1; height: 7px; background: var(--border);
+      border-radius: 4px; overflow: hidden;
+    }
+    .rp-bar-fill {
+      height: 100%; background: #3987e5; border-radius: 4px;
+      transition: width .6s ease;
+    }
+    .rp-bar-amount {
+      width: 58px; text-align: right; font-size: 11px;
+      color: var(--muted); flex-shrink: 0; font-variant-numeric: tabular-nums;
+    }
+
+    /* Recommendation cards (status palette — icon + label always paired) */
+    .rp-recs { display: flex; flex-direction: column; gap: 7px; }
+    .rp-rec {
+      background: var(--bg); border: 1px solid var(--border);
+      border-left: 3px solid var(--border); border-radius: 6px; padding: 10px 12px;
+    }
+    .rp-rec.high   { border-left-color: #d03b3b; }
+    .rp-rec.medium { border-left-color: #fab219; }
+    .rp-rec.low    { border-left-color: #0ca30c; }
+    .rp-rec-header { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 5px; }
+    .rp-rec-badge {
+      font-size: 9px; font-weight: 700; padding: 2px 5px; border-radius: 3px;
+      text-transform: uppercase; letter-spacing: 0.4px;
+      flex-shrink: 0; margin-top: 1px; white-space: nowrap;
+    }
+    .rp-rec-badge.high   { background: rgba(208,59,59,.15);  color: #d03b3b; }
+    .rp-rec-badge.medium { background: rgba(250,178,25,.15); color: #fab219; }
+    .rp-rec-badge.low    { background: rgba(12,163,12,.15);  color: #0ca30c; }
+    .rp-rec-title   { font-size: 12px; font-weight: 600; color: var(--text); flex: 1; line-height: 1.4; }
+    .rp-rec-savings { font-size: 12px; font-weight: 700; color: #0ca30c; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+    .rp-rec-desc    { font-size: 11px; color: var(--muted); line-height: 1.5; margin-bottom: 4px; }
+    .rp-rec-action  { font-size: 11px; color: var(--accent); }
   </style>
 </head>
 <body>
@@ -495,48 +664,110 @@
   <div id="session-list"></div>
 </div>
 
-<!-- Credential error banner (shown when AWS session is invalid) -->
-<div id="cred-banner">
-  <div class="icon">🔐</div>
-  <div>
-    <strong id="cred-title">AWS Session Expired</strong>
-    <span id="cred-detail">Your AWS session token has expired. Please refresh your credentials and restart the server.</span>
-    <ul class="steps">
-      <li>Update <code>.env</code> with fresh <code>AWS_ACCESS_KEY_ID</code>, <code>AWS_SECRET_ACCESS_KEY</code>, and <code>AWS_SESSION_TOKEN</code></li>
-      <li>Restart: <code>python3 chat.py</code></li>
-    </ul>
+<div id="main-split">
+
+  <!-- ── Left: Chat panel ── -->
+  <div id="chat-panel">
+
+    <!-- Credential error banner -->
+    <div id="cred-banner">
+      <div class="icon">🔐</div>
+      <div>
+        <strong id="cred-title">AWS Session Expired</strong>
+        <span id="cred-detail">Your AWS session token has expired. Please refresh your credentials and restart the server.</span>
+        <ul class="steps">
+          <li>Update <code>.env</code> with fresh <code>AWS_ACCESS_KEY_ID</code>, <code>AWS_SECRET_ACCESS_KEY</code>, and <code>AWS_SESSION_TOKEN</code></li>
+          <li>Restart: <code>python3 chat.py</code></li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Checking state -->
+    <div id="checking">
+      <div class="spin-lg"></div>
+      <span>Verifying AWS credentials…</span>
+    </div>
+
+    <div id="empty" style="display:none">
+      <div class="icon">💬</div>
+      <h2>Ask anything about your AWS costs</h2>
+      <p>I have live access to your EC2, RDS, EBS, S3, Lambda, CloudWatch, and more. Try one of the questions below or type your own.</p>
+    </div>
+
+    <div id="messages" style="display:none"></div>
+
+    <div id="suggestions">
+      <div class="sug" onclick="ask(this)">What is my total monthly AWS spend?</div>
+      <div class="sug" onclick="ask(this)">Show me my top 5 most expensive resources</div>
+      <div class="sug" onclick="ask(this)">Which EC2 instances are over-provisioned?</div>
+      <div class="sug" onclick="ask(this)">What's the cost impact of deleting unattached EBS volumes?</div>
+      <div class="sug" onclick="ask(this)">Do I have any idle load balancers?</div>
+      <div class="sug" onclick="ask(this)">How much can I save with Savings Plans?</div>
+    </div>
+
+    <div id="input-bar">
+      <textarea id="input" rows="1" placeholder="Ask anything about your AWS costs…"></textarea>
+      <button id="send" onclick="sendMessage()">
+        <svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg>
+      </button>
+    </div>
+
+  </div><!-- /chat-panel -->
+
+  <!-- ── Right: Cost Optimization panel ── -->
+  <div id="right-panel">
+
+    <div class="rp-header">
+      <div class="rp-title">
+        <span>Cost Optimization</span>
+        <span class="rp-period" id="rp-period"></span>
+      </div>
+      <div class="rp-controls">
+        <span class="rp-updated" id="rp-updated"></span>
+        <div class="rp-status">
+          <span class="rp-status-dot idle" id="rp-status-dot"></span>
+          <span id="rp-status-text">Idle</span>
+        </div>
+        <button class="rp-refresh" id="rp-refresh" onclick="runAnalysis()">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          Refresh
+        </button>
+      </div>
+    </div>
+
+    <div class="rp-body">
+
+      <!-- Idle -->
+      <div class="rp-idle" id="rp-idle">
+        <div class="rp-idle-icon">📊</div>
+        <div class="rp-idle-text">Click <strong>Refresh</strong> to analyze your AWS environment for cost optimization opportunities this month.</div>
+      </div>
+
+      <!-- Running -->
+      <div class="rp-running" id="rp-running">
+        <div class="rp-running-title">Analyzing your AWS environment…</div>
+        <div class="rp-log" id="rp-log"></div>
+      </div>
+
+      <!-- Error -->
+      <div class="rp-error" id="rp-error">
+        <div class="rp-error-icon">⚠</div>
+        <div class="rp-error-msg" id="rp-error-msg">Analysis failed.</div>
+      </div>
+
+      <!-- Result -->
+      <div class="rp-result" id="rp-result">
+        <div class="rp-kpi-row" id="rp-kpi-row"></div>
+        <div class="rp-section-title">Spend by Service</div>
+        <div class="rp-bars" id="rp-bars"></div>
+        <div class="rp-section-title">Recommendations</div>
+        <div class="rp-recs" id="rp-recs"></div>
+      </div>
+
+    </div>
   </div>
-</div>
 
-<!-- Checking state (shown while /status call is in flight) -->
-<div id="checking">
-  <div class="spin-lg"></div>
-  <span>Verifying AWS credentials…</span>
-</div>
-
-<div id="empty" style="display:none">
-  <div class="icon">💬</div>
-  <h2>Ask anything about your AWS costs</h2>
-  <p>I have live access to your EC2, RDS, EBS, S3, Lambda, CloudWatch, and more. Try one of the questions below or type your own.</p>
-</div>
-
-<div id="messages" style="display:none"></div>
-
-<div id="suggestions">
-  <div class="sug" onclick="ask(this)">What is my total monthly AWS spend?</div>
-  <div class="sug" onclick="ask(this)">Show me my top 5 most expensive resources</div>
-  <div class="sug" onclick="ask(this)">Which EC2 instances are over-provisioned?</div>
-  <div class="sug" onclick="ask(this)">What's the cost impact of deleting unattached EBS volumes?</div>
-  <div class="sug" onclick="ask(this)">Do I have any idle load balancers?</div>
-  <div class="sug" onclick="ask(this)">How much can I save with Savings Plans?</div>
-</div>
-
-<div id="input-bar">
-  <textarea id="input" rows="1" placeholder="Ask anything about your AWS costs…"></textarea>
-  <button id="send" onclick="sendMessage()">
-    <svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg>
-  </button>
-</div>
+</div><!-- /main-split -->
 
 <script>
   // ── Simple inline markdown renderer ──────────────────────────────────────
@@ -644,6 +875,7 @@
         sendBtn.disabled = false;
         inputEl.disabled = false;
         inputEl.focus();
+        loadAnalysis();
       } else {
         // Credentials invalid — show banner, lock input
         statusDot.style.background = 'var(--error)';
@@ -990,6 +1222,267 @@
     await fetch('/sessions', { method: 'DELETE' });
     newChat();
     sessionListEl.innerHTML = '<div class="session-empty">No previous chats yet.</div>';
+  }
+
+  // ── Cost Optimization Analysis (right panel) ──────────────────────────────
+
+  const rpRefreshBtn  = document.getElementById('rp-refresh');
+  const rpStatusDot   = document.getElementById('rp-status-dot');
+  const rpStatusText  = document.getElementById('rp-status-text');
+  const rpUpdatedEl   = document.getElementById('rp-updated');
+  const rpPeriodEl    = document.getElementById('rp-period');
+  const rpIdleEl      = document.getElementById('rp-idle');
+  const rpRunningEl   = document.getElementById('rp-running');
+  const rpErrorEl     = document.getElementById('rp-error');
+  const rpResultEl    = document.getElementById('rp-result');
+
+  let _rpState     = 'idle';
+  let _logQueue    = [];
+  let _logDoneCount = 0;
+
+  function setRpState(state, msg) {
+    _rpState = state;
+    rpIdleEl.style.display    = 'none';
+    rpRunningEl.style.display = 'none';
+    rpErrorEl.style.display   = 'none';
+    rpResultEl.style.display  = 'none';
+
+    rpStatusDot.className  = 'rp-status-dot ' + state;
+    rpStatusText.textContent =
+      state === 'idle'    ? 'Idle'        :
+      state === 'running' ? 'Analyzing…'  :
+      state === 'done'    ? 'Done'        : 'Error';
+
+    if (state === 'idle')    rpIdleEl.style.display    = 'flex';
+    if (state === 'running') rpRunningEl.style.display = 'flex';
+    if (state === 'done')    rpResultEl.style.display  = 'flex';
+    if (state === 'error') {
+      rpErrorEl.style.display = 'flex';
+      document.getElementById('rp-error-msg').textContent = msg || 'Analysis failed.';
+    }
+  }
+
+  function setRpUpdated(isoStr) {
+    if (!isoStr) { rpUpdatedEl.textContent = ''; return; }
+    const d = new Date(isoStr);
+    rpUpdatedEl.textContent = 'Updated ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function _fmtUsd(n) {
+    return '$' + (n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function _renderLog() {
+    const logEl = document.getElementById('rp-log');
+    if (!logEl) return;
+    logEl.innerHTML = _logQueue.map((text, i) => {
+      const done = i < _logDoneCount;
+      return `<div class="rp-log-entry ${done ? 'done' : 'active'}">
+        ${done
+          ? '<span class="rp-log-check">✓</span>'
+          : '<span class="rp-log-spin"><div class="spin"></div></span>'}
+        <span>${text}</span>
+      </div>`;
+    }).join('');
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function _formatPeriod(yearMonth) {
+    if (!yearMonth) return '';
+    const [y, m] = yearMonth.split('-');
+    const MONTHS = ['January','February','March','April','May','June',
+                    'July','August','September','October','November','December'];
+    return (MONTHS[parseInt(m) - 1] || m) + ' ' + y;
+  }
+
+  function _kpiTile(label, value, cls = '', sub = '') {
+    return `<div class="rp-kpi">
+      <div class="rp-kpi-label">${label}</div>
+      <div class="rp-kpi-value ${cls}">${value}</div>
+      ${sub ? `<div class="rp-kpi-sub">${sub}</div>` : ''}
+    </div>`;
+  }
+
+  function renderAnalysis(data) {
+    // Period in panel header
+    const periodLabel = _formatPeriod(data.period);
+    if (rpPeriodEl) {
+      rpPeriodEl.textContent = periodLabel + (data.is_partial ? ' · MTD' : '');
+    }
+
+    // KPI tiles — dynamic based on whether month is in progress
+    const kpiRow  = document.getElementById('rp-kpi-row');
+    const savings = data.potential_monthly_savings_usd || 0;
+    const tiles   = [];
+
+    if (data.is_partial) {
+      // Current month is still running: show MTD + projection + prev month + savings
+      const today        = new Date();
+      const daysInMonth  = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+      const daysElapsed  = today.getDate();
+
+      tiles.push(_kpiTile(
+        periodLabel + ' (MTD)',
+        _fmtUsd(data.total_monthly_spend_usd),
+        '',
+        `${daysElapsed} of ${daysInMonth} days`
+      ));
+      tiles.push(_kpiTile(
+        'Projected End of Month',
+        _fmtUsd(data.projected_end_usd || data.total_monthly_spend_usd),
+        '',
+        'Linear projection'
+      ));
+      tiles.push(_kpiTile(
+        _formatPeriod(data.previous_month_period),
+        _fmtUsd(data.previous_month_usd),
+        '',
+        'Previous month'
+      ));
+      tiles.push(_kpiTile('Potential Savings', _fmtUsd(savings), 'savings', periodLabel));
+      kpiRow.style.gridTemplateColumns = 'repeat(2, 1fr)';
+    } else {
+      // Full month completed
+      tiles.push(_kpiTile(periodLabel, _fmtUsd(data.total_monthly_spend_usd)));
+      tiles.push(_kpiTile(
+        _formatPeriod(data.previous_month_period),
+        _fmtUsd(data.previous_month_usd),
+        '',
+        'Previous month'
+      ));
+      tiles.push(_kpiTile('Potential Savings', _fmtUsd(savings), 'savings', periodLabel));
+      kpiRow.style.gridTemplateColumns = 'repeat(3, 1fr)';
+    }
+
+    kpiRow.innerHTML = tiles.join('');
+
+    // Horizontal bars — sequential blue, magnitude comparison
+    const services = (data.spend_by_service || [])
+      .filter(s => (s.spend_usd || 0) > 0.01)
+      .sort((a, b) => b.spend_usd - a.spend_usd)
+      .slice(0, 8);
+    const maxSpend = services[0]?.spend_usd || 1;
+    document.getElementById('rp-bars').innerHTML = services.length
+      ? services.map(s => {
+          const pctBar = Math.max(2, Math.round(s.spend_usd / maxSpend * 100));
+          const name   = s.service.replace(/^Amazon /, '').replace(/^AWS /, '');
+          return `<div class="rp-bar-row">
+            <div class="rp-bar-label" title="${s.service}">${name}</div>
+            <div class="rp-bar-track" title="${_fmtUsd(s.spend_usd)}">
+              <div class="rp-bar-fill" style="width:${pctBar}%"></div>
+            </div>
+            <div class="rp-bar-amount">${_fmtUsd(s.spend_usd)}</div>
+          </div>`;
+        }).join('')
+      : '<div style="font-size:12px;color:var(--muted)">No service spend data available.</div>';
+
+    // Recommendation cards — status palette with icon+label per dataviz rules
+    const SEV = {
+      high:   { icon: '⚠', label: 'HIGH' },
+      medium: { icon: '●', label: 'MED'  },
+      low:    { icon: '◇', label: 'LOW'  },
+    };
+    const recs = (data.recommendations || [])
+      .sort((a, b) => (b.estimated_monthly_savings_usd || 0) - (a.estimated_monthly_savings_usd || 0));
+    document.getElementById('rp-recs').innerHTML = recs.length
+      ? recs.map(r => {
+          const sev     = (r.severity || 'low').toLowerCase();
+          const s       = SEV[sev] || SEV.low;
+          const resText = r.resource_count > 0 ? ` · ${r.resource_count} resource${r.resource_count !== 1 ? 's' : ''}` : '';
+          const savText = r.estimated_monthly_savings_usd > 0 ? _fmtUsd(r.estimated_monthly_savings_usd) + '/mo' : '';
+          return `<div class="rp-rec ${sev}">
+            <div class="rp-rec-header">
+              <span class="rp-rec-badge ${sev}">${s.icon} ${s.label}</span>
+              <span class="rp-rec-title">${r.title}</span>
+              ${savText ? `<span class="rp-rec-savings">${savText}</span>` : ''}
+            </div>
+            <div class="rp-rec-desc">${r.description}${resText}</div>
+            ${r.action ? `<div class="rp-rec-action">→ ${r.action}</div>` : ''}
+          </div>`;
+        }).join('')
+      : '<div style="font-size:12px;color:var(--muted)">No recommendations — your environment looks well-optimized!</div>';
+  }
+
+  async function loadAnalysis() {
+    try {
+      const res  = await fetch('/analysis');
+      const data = await res.json();
+      if (data.result) {
+        renderAnalysis(data.result);
+        setRpState('done');
+        setRpUpdated(data.updated_at);
+      }
+    } catch { /* server not ready yet */ }
+  }
+
+  async function runAnalysis() {
+    if (rpRefreshBtn.disabled) return;
+    rpRefreshBtn.disabled = true;
+
+    _logQueue     = [];
+    _logDoneCount = 0;
+    setRpState('running');
+    _renderLog();
+
+    try {
+      const resp = await fetch('/analysis/run', { method: 'POST' });
+      if (!resp.ok) {
+        setRpState('error', 'Server error: ' + resp.status);
+        rpRefreshBtn.disabled = false;
+        return;
+      }
+
+      const reader  = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          let ev;
+          try { ev = JSON.parse(line.slice(6)); } catch { continue; }
+
+          if (ev.type === 'log') {
+            _logQueue.push(ev.data);
+            _renderLog();
+
+          } else if (ev.type === 'tool_end') {
+            // Only count completions for our tracked tools (filter built-ins)
+            if (ev.data === 'call_aws_api' || ev.data === 'execute_python') {
+              _logDoneCount = Math.min(_logDoneCount + 1, _logQueue.length);
+              _renderLog();
+            }
+
+          } else if (ev.type === 'result') {
+            try {
+              renderAnalysis(JSON.parse(ev.data));
+              setRpState('done');
+              setRpUpdated(new Date().toISOString());
+            } catch (e) {
+              setRpState('error', 'Failed to parse result: ' + e.message);
+            }
+
+          } else if (ev.type === 'error') {
+            setRpState('error', ev.data);
+
+          } else if (ev.type === 'done') {
+            if (_rpState === 'running') {
+              setRpState('error', 'Analysis completed but did not return a structured result.');
+            }
+          }
+        }
+      }
+    } catch (err) {
+      setRpState('error', 'Connection error: ' + err.message);
+    }
+
+    rpRefreshBtn.disabled = false;
   }
 </script>
 </body>

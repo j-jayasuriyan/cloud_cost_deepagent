@@ -1,0 +1,601 @@
+<title>DeepAgent Architecture Flow</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ── Token system ── */
+:root {
+  --bg:        #f3f4f8;
+  --surface:   #ffffff;
+  --surface-2: #f0f1f6;
+  --border:    #dde0ec;
+  --text:      #191d2e;
+  --muted:     #5c6480;
+  --subtle:    #9aa0bc;
+
+  --c-browser: #3a66d8;
+  --c-server:  #445870;
+  --c-agent:   #0e9267;
+  --c-aws:     #c44e1f;
+  --c-stream:  #a86e00;
+  --c-db:      #6b52b8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:        #090c13;
+    --surface:   #0f1322;
+    --surface-2: #161b2e;
+    --border:    #1e2540;
+    --text:      #d8dcee;
+    --muted:     #6a7494;
+    --subtle:    #343d60;
+    --c-browser: #4f7bef;
+    --c-server:  #4e6080;
+    --c-agent:   #1aaa7a;
+    --c-aws:     #d95926;
+    --c-stream:  #c98500;
+    --c-db:      #9085e9;
+  }
+}
+:root[data-theme="dark"] {
+  --bg:        #090c13;
+  --surface:   #0f1322;
+  --surface-2: #161b2e;
+  --border:    #1e2540;
+  --text:      #d8dcee;
+  --muted:     #6a7494;
+  --subtle:    #343d60;
+  --c-browser: #4f7bef;
+  --c-server:  #4e6080;
+  --c-agent:   #1aaa7a;
+  --c-aws:     #d95926;
+  --c-stream:  #c98500;
+  --c-db:      #9085e9;
+}
+:root[data-theme="light"] {
+  --bg:        #f3f4f8;
+  --surface:   #ffffff;
+  --surface-2: #f0f1f6;
+  --border:    #dde0ec;
+  --text:      #191d2e;
+  --muted:     #5c6480;
+  --subtle:    #9aa0bc;
+  --c-browser: #3a66d8;
+  --c-server:  #445870;
+  --c-agent:   #0e9267;
+  --c-aws:     #c44e1f;
+  --c-stream:  #a86e00;
+  --c-db:      #6b52b8;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+.page {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 44px 24px 64px;
+}
+
+/* ── Header ── */
+.page-header { text-align: center; margin-bottom: 44px; }
+.eyebrow {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--c-agent); margin-bottom: 10px;
+}
+.page-title {
+  font-size: 26px; font-weight: 700; letter-spacing: -0.025em;
+  color: var(--text); margin-bottom: 8px; text-wrap: balance;
+}
+.page-sub {
+  font-size: 13px; color: var(--muted);
+  max-width: 500px; margin: 0 auto; line-height: 1.65;
+}
+
+/* ── Flow wrapper — two columns: main flow | db sidebar ── */
+.flow-grid {
+  display: grid;
+  grid-template-columns: 1fr 188px;
+  gap: 0 0;
+  align-items: start;
+}
+
+/* Items that span both columns */
+.span-full { grid-column: 1 / -1; }
+
+/* ── Layer (left column) ── */
+.layer {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 16px 18px;
+}
+.layer--browser { border-left-color: var(--c-browser); }
+.layer--server  { border-left-color: var(--c-server); }
+.layer--agent   { border-left-color: var(--c-agent); }
+.layer--stream  { border-left-color: var(--c-stream); }
+
+.layer-badge {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.09em; color: var(--muted); margin-bottom: 14px;
+}
+
+/* ── DB node (right column) ── */
+.db-cell {
+  padding-left: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+}
+
+/* Horizontal wire from layer to DB node */
+.db-wire {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  height: 100%;
+  min-height: 60px;
+  justify-content: flex-start;
+}
+
+.db-node {
+  border: 1px solid rgba(107,82,184,0.45);
+  border-left: 3px solid var(--c-db);
+  border-radius: 6px;
+  background: rgba(107,82,184,0.06);
+  padding: 10px 12px;
+  width: 100%;
+}
+.db-node-name {
+  font-size: 12px; font-weight: 700; color: var(--c-db);
+  margin-bottom: 4px; font-family: "SF Mono", Menlo, monospace;
+}
+.db-node-path {
+  font-size: 10px; color: var(--muted); margin-bottom: 6px;
+  font-family: "SF Mono", Menlo, monospace;
+}
+.db-node-ops {
+  display: flex; flex-direction: column; gap: 2px;
+}
+.db-op {
+  font-size: 10.5px; color: var(--muted); display: flex; align-items: flex-start; gap: 4px;
+  line-height: 1.4;
+}
+.db-op-dir {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; flex-shrink: 0; margin-top: 1px;
+  padding: 1px 4px; border-radius: 3px;
+}
+.db-op-dir.w { background: rgba(107,82,184,0.15); color: var(--c-db); }
+.db-op-dir.r { background: rgba(107,82,184,0.08); color: var(--muted); }
+
+/* Wire connecting layer to DB node */
+.wire-row {
+  display: flex;
+  align-items: center;
+  padding-left: 14px;
+  gap: 0;
+}
+.wire-line {
+  height: 1px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--c-db) 0, var(--c-db) 4px,
+    transparent 4px, transparent 8px
+  );
+  flex: 1;
+}
+.wire-label {
+  font-size: 9.5px; color: var(--c-db); white-space: nowrap;
+  writing-mode: horizontal-tb; text-align: center;
+  padding: 0 4px;
+  opacity: 0.7;
+}
+
+/* Empty DB cells (for rows without a DB) */
+.db-cell-empty { padding-left: 14px; }
+
+/* ── Vertical connector ── */
+.connector {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 2px 0; gap: 4px;
+}
+.connector-track {
+  position: relative; width: 1px; height: 30px; background: var(--border);
+}
+.connector-track::after {
+  content: ''; position: absolute; bottom: -5px; left: -4px;
+  border: 5px solid transparent; border-top-color: var(--subtle);
+}
+.connector-label { font-size: 10.5px; color: var(--muted); letter-spacing: 0.01em; }
+
+/* ── Generic horizontal node row ── */
+.node-row { display: flex; align-items: stretch; gap: 10px; flex-wrap: wrap; }
+.node {
+  flex: 1; min-width: 130px; background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 6px; padding: 10px 13px;
+}
+.node-name { font-weight: 600; font-size: 13px; margin-bottom: 3px; }
+.node-desc { font-size: 11px; color: var(--muted); line-height: 1.55; }
+.h-arr { font-size: 16px; color: var(--subtle); align-self: center; flex-shrink: 0; }
+
+/* ── Agent section ── */
+.agent-inner { display: flex; flex-direction: column; gap: 10px; }
+
+.ctx-row {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 6px; padding: 10px 13px;
+}
+.ctx-row-label {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--muted); margin-bottom: 8px;
+}
+.pills { display: flex; flex-wrap: wrap; gap: 5px; }
+.pill {
+  font-size: 11px; padding: 3px 8px; border-radius: 20px;
+  border: 1px solid rgba(26,170,122,0.3);
+  background: rgba(26,170,122,0.08); color: var(--c-agent);
+}
+
+.lbox {
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 10px 13px; background: var(--surface-2);
+}
+.lbox.llm   { border-color: rgba(26,170,122,0.45); background: rgba(26,170,122,0.07); }
+.lbox.msg   { border-color: rgba(79,123,239,0.35); background: rgba(79,123,239,0.05); }
+.lbox.final { border-color: rgba(26,170,122,0.5);  background: rgba(26,170,122,0.09); }
+.lbox.aws   { border-color: rgba(217,89,38,0.4);   background: rgba(217,89,38,0.06); }
+.lbox.repl  { border-color: rgba(79,123,239,0.3);  background: rgba(79,123,239,0.04); }
+
+.lbox-name { font-size: 12px; font-weight: 700; margin-bottom: 3px; }
+.lbox.llm   .lbox-name { color: var(--c-agent); }
+.lbox.msg   .lbox-name { color: var(--c-browser); }
+.lbox.final .lbox-name { color: var(--c-agent); }
+.lbox.aws   .lbox-name { color: var(--c-aws); }
+.lbox.repl  .lbox-name { color: var(--c-browser); }
+.lbox-desc { font-size: 11px; color: var(--muted); line-height: 1.55; }
+
+.step-arrow {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 0; font-size: 11px; color: var(--muted);
+}
+.step-arrow-sym { font-size: 14px; color: var(--subtle); }
+
+.tool-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.tool-col  { display: flex; flex-direction: column; gap: 5px; }
+.tool-sub-arrow {
+  font-size: 11px; color: var(--muted); text-align: center; padding: 2px 0;
+}
+
+.loop-back {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 8px 12px; border: 1px dashed var(--border); border-radius: 5px;
+  background: rgba(79,123,239,0.03); font-size: 11px;
+  color: var(--muted); line-height: 1.55;
+}
+.loop-back-icon { font-size: 16px; color: var(--subtle); flex-shrink: 0; margin-top: -1px; }
+
+/* ── SSE layer ── */
+.sse-body { display: flex; flex-direction: column; gap: 10px; }
+.sse-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.chip {
+  font-size: 11px; font-family: "SF Mono", "Fira Code", Menlo, monospace;
+  padding: 3px 9px; border-radius: 4px; border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--muted);
+}
+.chip.ct { border-color: rgba(79,123,239,0.45);  color: var(--c-browser); }
+.chip.tx { border-color: rgba(26,170,122,0.45);  color: var(--c-agent); }
+.chip.lg { border-color: rgba(201,133,0,0.45);   color: var(--c-stream); }
+.chip.rs { border-color: rgba(26,170,122,0.6);   color: var(--c-agent); background: rgba(26,170,122,0.07); }
+.chip.dn { color: var(--subtle); }
+.chip.er { border-color: rgba(180,40,40,0.4);    color: #c0392b; }
+.chip-sep { font-size: 12px; color: var(--border); }
+
+.sse-note { font-size: 11px; color: var(--muted); line-height: 1.6; }
+.sse-note code {
+  font-family: "SF Mono", Menlo, monospace; font-size: 10.5px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 3px; padding: 1px 5px;
+}
+
+/* ── Output layer ── */
+.output-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.out-block {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 6px; padding: 12px 13px;
+}
+.out-title {
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--c-browser); margin-bottom: 9px;
+}
+.out-item {
+  font-size: 11px; color: var(--muted);
+  padding: 3px 0 3px 14px; position: relative; line-height: 1.45;
+}
+.out-item::before {
+  content: '→'; position: absolute; left: 0;
+  color: var(--subtle); font-size: 11px;
+}
+
+/* ── DB legend at bottom ── */
+.db-legend {
+  margin-top: 32px;
+  border: 1px solid rgba(107,82,184,0.3);
+  border-radius: 8px;
+  background: rgba(107,82,184,0.04);
+  padding: 14px 18px;
+}
+.db-legend-title {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.09em; color: var(--c-db); margin-bottom: 12px;
+}
+.db-legend-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+}
+.db-legend-item { display: flex; flex-direction: column; gap: 3px; }
+.db-legend-file {
+  font-family: "SF Mono", Menlo, monospace; font-size: 12px;
+  font-weight: 700; color: var(--c-db);
+}
+.db-legend-detail { font-size: 11px; color: var(--muted); line-height: 1.55; }
+</style>
+
+<div class="page">
+
+  <header class="page-header">
+    <div class="eyebrow">AWS Cost Advisor · Architecture Reference</div>
+    <h1 class="page-title">DeepAgent — NLP Request to Streamed Output</h1>
+    <p class="page-sub">How a natural language query flows through the reasoning loop, tool invocations, and SSE streaming to produce a browser response — including where data is persisted</p>
+  </header>
+
+  <div class="flow-grid">
+
+    <!-- ── 1 · Browser Input (full width) ── -->
+    <div class="layer layer--browser">
+      <div class="layer-badge">Browser · User Input</div>
+      <div class="node-row">
+        <div class="node">
+          <div class="node-name">Natural Language Query</div>
+          <div class="node-desc">"Which EC2 instances are over-provisioned?"<br>or clicks Refresh on the analysis panel</div>
+        </div>
+        <div class="h-arr">→</div>
+        <div class="node">
+          <div class="node-name">HTTP POST</div>
+          <div class="node-desc">/chat · {message, thread_id}<br>/analysis/run · {}</div>
+        </div>
+        <div class="h-arr">→</div>
+        <div class="node">
+          <div class="node-name">ReadableStream</div>
+          <div class="node-desc">SSE reader opened<br>processes events as chunks arrive</div>
+        </div>
+      </div>
+    </div>
+    <div class="db-cell-empty"></div>
+
+    <!-- connector -->
+    <div class="connector"><div class="connector-track"></div><div class="connector-label">opens SSE connection · text/event-stream</div></div>
+    <div></div>
+
+    <!-- ── 2 · FastAPI + chat_history.db ── -->
+    <div class="layer layer--server">
+      <div class="layer-badge">FastAPI · server.py</div>
+      <div class="node-row">
+        <div class="node">
+          <div class="node-name">Route Handler</div>
+          <div class="node-desc">POST /chat<br>POST /analysis/run<br>GET /sessions, DELETE /sessions</div>
+        </div>
+        <div class="h-arr">→</div>
+        <div class="node">
+          <div class="node-name">Async Generator</div>
+          <div class="node-desc">event_stream()<br>stream() for analysis</div>
+        </div>
+        <div class="h-arr">→</div>
+        <div class="node">
+          <div class="node-name">agent.astream()</div>
+          <div class="node-desc">thread_id config<br>stream_mode="messages"</div>
+        </div>
+        <div class="h-arr">→</div>
+        <div class="node">
+          <div class="node-name">StreamingResponse</div>
+          <div class="node-desc">yields SSE events<br>back to browser</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="db-cell">
+      <div class="wire-row">
+        <div class="wire-line"></div>
+        <div class="wire-label">read · write</div>
+      </div>
+      <div class="db-node">
+        <div class="db-node-name">chat_history.db</div>
+        <div class="db-node-path">project_root/chat_history.db</div>
+        <div class="db-node-ops">
+          <div class="db-op"><span class="db-op-dir w">W</span>upsert_session, save_message, touch_session after each response</div>
+          <div class="db-op"><span class="db-op-dir r">R</span>get_sessions, get_messages for history panel</div>
+          <div class="db-op"><span class="db-op-dir w">W</span>delete_session, delete_all_sessions</div>
+        </div>
+      </div>
+      <div style="font-size:10px;color:var(--muted);padding:4px 0 0 0;line-height:1.5;">sqlite3 (sync) · chat_db.py · auto-created on first run · in .gitignore</div>
+    </div>
+
+    <!-- connector -->
+    <div class="connector"><div class="connector-track"></div><div class="connector-label">LangGraph receives input message</div></div>
+    <div></div>
+
+    <!-- ── 3 · DeepAgent + langgraph.db ── -->
+    <div class="layer layer--agent">
+      <div class="layer-badge">DeepAgent · LangGraph · agents/chat_agent.py · create_deep_agent()</div>
+      <div class="agent-inner">
+
+        <div class="ctx-row">
+          <div class="ctx-row-label">System Prompt — compiled once at server startup, injected into every request</div>
+          <div class="pills">
+            <span class="pill">AWS Account ID</span>
+            <span class="pill">Default Region</span>
+            <span class="pill">Today's Date</span>
+            <span class="pill">call_aws_api usage guide</span>
+            <span class="pill">execute_python usage guide</span>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:6px;">
+
+          <div class="lbox llm">
+            <div class="lbox-name">Claude Haiku 4.5 — Reasoning</div>
+            <div class="lbox-desc">Amazon Bedrock · ConverseStream API · reads system prompt + full conversation history loaded from checkpointer (langgraph.db)</div>
+          </div>
+
+          <div class="step-arrow">
+            <span class="step-arrow-sym">↓</span>
+            determines what information is needed and which tool to call
+          </div>
+
+          <div class="lbox msg">
+            <div class="lbox-name">AIMessage + tool_calls</div>
+            <div class="lbox-desc">structured invocation — tool name, typed arguments (service + operation + params, or code + context_json)</div>
+          </div>
+
+          <div class="step-arrow"><span class="step-arrow-sym">↓</span>dispatched to selected tool</div>
+
+          <div class="tool-grid">
+            <div class="tool-col">
+              <div class="lbox aws">
+                <div class="lbox-name">call_aws_api(service, operation, params)</div>
+                <div class="lbox-desc">boto3.client(service).operation(**params) → strips ResponseMetadata → JSON</div>
+              </div>
+              <div class="tool-sub-arrow">↓ boto3 call</div>
+              <div class="lbox" style="border-color:rgba(217,89,38,0.35);background:rgba(217,89,38,0.04);">
+                <div class="lbox-name" style="color:var(--c-aws);font-size:11.5px;">AWS Services</div>
+                <div class="lbox-desc">ce · ec2 · rds · elbv2 · sts · s3 · cloudwatch · any boto3-supported service</div>
+              </div>
+            </div>
+            <div class="tool-col">
+              <div class="lbox repl">
+                <div class="lbox-name">execute_python(code, context_json)</div>
+                <div class="lbox-desc">subprocess.run() · sandboxed · 10 s timeout · context pre-parsed as _ctx</div>
+              </div>
+              <div class="tool-sub-arrow">↓ stdout / stderr</div>
+              <div class="lbox" style="border-color:rgba(79,123,239,0.3);background:rgba(79,123,239,0.03);">
+                <div class="lbox-name" style="color:var(--c-browser);font-size:11.5px;">Python Subprocess</div>
+                <div class="lbox-desc">aggregations · projections · JSON compilation · analysis result printing</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="step-arrow"><span class="step-arrow-sym">↓</span>tool result appended to conversation as ToolMessage</div>
+
+          <div class="loop-back">
+            <span class="loop-back-icon">↺</span>
+            <span>If reasoning is not yet complete — model issues another AIMessage with tool_calls and the loop repeats. Each iteration extends the context with the new ToolMessage. Checkpoint saved to langgraph.db after every step.</span>
+          </div>
+
+          <div class="step-arrow"><span class="step-arrow-sym">↓</span>when model produces a final AIMessage with no further tool_calls</div>
+
+          <div class="lbox final">
+            <div class="lbox-name">Final AIMessage</div>
+            <div class="lbox-desc">natural language answer (chat) &nbsp;·&nbsp; or &nbsp;·&nbsp; structured JSON printed by execute_python (analysis panel)</div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <div class="db-cell">
+      <div class="wire-row">
+        <div class="wire-line"></div>
+        <div class="wire-label">read · write</div>
+      </div>
+      <div class="db-node">
+        <div class="db-node-name">langgraph.db</div>
+        <div class="db-node-path">project_root/langgraph.db</div>
+        <div class="db-node-ops">
+          <div class="db-op"><span class="db-op-dir r">R</span>loads full conversation history before each astream() call</div>
+          <div class="db-op"><span class="db-op-dir w">W</span>checkpoints after every message + tool call/result step</div>
+          <div class="db-op"><span class="db-op-dir w">W</span>delete clears checkpoint_writes, checkpoint_blobs, checkpoints tables</div>
+        </div>
+      </div>
+      <div style="font-size:10px;color:var(--muted);padding:4px 0 0 0;line-height:1.5;">AsyncSqliteSaver · WAL mode · aiosqlite · auto-created · in .gitignore</div>
+    </div>
+
+    <!-- connector -->
+    <div class="connector"><div class="connector-track"></div><div class="connector-label">server yields one SSE event per stream chunk</div></div>
+    <div></div>
+
+    <!-- ── 4 · SSE Events (full width) ── -->
+    <div class="layer layer--stream">
+      <div class="layer-badge">SSE Protocol · data: {"type": "…", "data": "…"}\n\n</div>
+      <div class="sse-body">
+        <div class="sse-chips">
+          <div class="chip ct">tool_start</div><div class="chip-sep">·</div>
+          <div class="chip tx">text</div><div class="chip-sep">·</div>
+          <div class="chip ct">tool_end</div><div class="chip-sep">·</div>
+          <div class="chip lg">log</div><div class="chip-sep">·</div>
+          <div class="chip rs">result</div><div class="chip-sep">·</div>
+          <div class="chip dn">done</div><div class="chip-sep">|</div>
+          <div class="chip er">error</div><div class="chip-sep">|</div>
+          <div class="chip" style="border-color:rgba(79,123,239,0.3);color:var(--c-browser);">session_corrupted</div>
+        </div>
+        <div class="sse-note">
+          Zero polling — browser reads via <code>ReadableStream.getReader()</code> and processes each line as it arrives.
+          <code>log</code> and <code>result</code> are exclusive to the analysis panel; <code>tool_start</code>, <code>text</code>, <code>session_corrupted</code> are exclusive to chat.
+        </div>
+      </div>
+    </div>
+    <div class="db-cell-empty"></div>
+
+    <!-- connector -->
+    <div class="connector"><div class="connector-track"></div><div class="connector-label">browser processes each event immediately on arrival</div></div>
+    <div></div>
+
+    <!-- ── 5 · Browser Output (full width) ── -->
+    <div class="layer layer--browser">
+      <div class="layer-badge">Browser · Rendered Output · static/index.html</div>
+      <div class="output-grid">
+        <div class="out-block">
+          <div class="out-title">Chat Panel (left)</div>
+          <div class="out-item">tool_start → spinning chip per tool call</div>
+          <div class="out-item">text → appended to bubble, Markdown re-rendered</div>
+          <div class="out-item">tool_end → chip turns ✓</div>
+          <div class="out-item">done → cursor removed, final render</div>
+          <div class="out-item">session_corrupted → auto-recover on new thread</div>
+          <div class="out-item">error → red error text in bubble</div>
+        </div>
+        <div class="out-block">
+          <div class="out-title">Analysis Panel (right)</div>
+          <div class="out-item">log → animated progress entry (spinner)</div>
+          <div class="out-item">tool_end → oldest pending spinner turns ✓</div>
+          <div class="out-item">result → KPI tiles · service bars · rec cards</div>
+          <div class="out-item">done → refresh button re-enabled</div>
+          <div class="out-item">error → error state with message</div>
+        </div>
+      </div>
+    </div>
+    <div class="db-cell-empty"></div>
+
+  </div><!-- /flow-grid -->
+
+  <!-- ── Database summary ── -->
+  <div class="db-legend">
+    <div class="db-legend-title">Persistence — two SQLite databases, both in the project root</div>
+    <div class="db-legend-grid">
+      <div class="db-legend-item">
+        <div class="db-legend-file">chat_history.db</div>
+        <div class="db-legend-detail">Stores session metadata and message text for the history panel sidebar. Managed by <code style="font-size:10.5px;font-family:monospace;">chat_db.py</code> using the standard <code style="font-size:10.5px;font-family:monospace;">sqlite3</code> module (synchronous). Tables: <code style="font-size:10.5px;font-family:monospace;">sessions</code>, <code style="font-size:10.5px;font-family:monospace;">messages</code>. Created automatically on first import of chat_db.</div>
+      </div>
+      <div class="db-legend-item">
+        <div class="db-legend-file">langgraph.db</div>
+        <div class="db-legend-detail">Stores the agent's full conversation checkpoints — every message and tool call/result pair per <code style="font-size:10.5px;font-family:monospace;">thread_id</code>. Managed by <code style="font-size:10.5px;font-family:monospace;">AsyncSqliteSaver</code> (LangGraph) via <code style="font-size:10.5px;font-family:monospace;">aiosqlite</code>. WAL mode enabled at startup so delete endpoints can open short-lived connections alongside the long-lived saver. Tables: <code style="font-size:10.5px;font-family:monospace;">checkpoints</code>, <code style="font-size:10.5px;font-family:monospace;">checkpoint_blobs</code>, <code style="font-size:10.5px;font-family:monospace;">checkpoint_writes</code>.</div>
+      </div>
+    </div>
+  </div>
+
+</div>
