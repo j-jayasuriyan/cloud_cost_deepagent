@@ -1,35 +1,44 @@
 # AWS Cloud Cost Optimization Advisor
 
-An AI-powered multi-agent system that analyzes your AWS account for cost optimization opportunities across 8 services and produces prioritized reports in Markdown, HTML, and JSON.
+A web app that lets a signed-in user connect any AWS account and ask an AI agent
+free-form questions about it — costs, resource inventory, waste, rightsizing —
+plus run a one-click structured cost-optimization scan.
 
-Built with [DeepAgents](https://docs.langchain.com/oss/python/deepagents/overview) (LangChain/LangGraph) and Claude on Amazon Bedrock.
+Built with [DeepAgents](https://docs.langchain.com/oss/python/deepagents/overview)
+(LangChain/LangGraph), Claude Haiku 4.5 on Amazon Bedrock, and FastAPI.
 
 ---
 
-## Architecture
+## How it works
 
-A master orchestrator delegates to 8 specialist sub-agents in parallel, then a report agent synthesizes everything:
+The agent has exactly two tools instead of one function per question:
 
-```
-Orchestrator
-├── EC2 Analyst       — instance rightsizing, idle Elastic IPs
-├── EBS Analyst       — unattached volumes, gp2→gp3, orphaned snapshots & AMIs
-├── RDS Analyst       — DB rightsizing, Multi-AZ in non-prod, RI coverage gaps
-├── S3 Analyst        — lifecycle policies, cold data, versioning, replication costs
-├── Network Analyst   — idle load balancers, NAT Gateway waste, VPC endpoints
-├── Savings Analyst   — Savings Plans, Reserved Instance coverage gaps
-├── Lambda Analyst    — over-provisioned memory, deprecated runtimes, idle functions
-├── CloudWatch Analyst— log group retention, orphaned metrics/alarms, unused dashboards
-└── Report Agent      → report.json + report.html
-```
+| Tool | What it does |
+|---|---|
+| `call_aws_api(service, operation, params)` | Any read-only boto3 operation on any AWS service |
+| `execute_python(code, context_json)` | Sandboxed Python for calculations over the JSON that came back |
+
+That's enough to answer questions nobody wrote code for — "which gp2 volumes
+should be gp3?", "project my spend if I stop the dev fleet" — without a code
+change per question. See [Architecture.md](Architecture.md) for the full
+design rationale and trade-offs.
+
+The app is split into two panels:
+
+- **Chat** — free-form questions, streamed answers, persistent history per thread
+- **Cost Analysis** — a scripted 7-step scan (Cost Explorer, EC2, EBS, RDS,
+  load balancers, Savings Plans) that produces a dashboard of prioritized
+  recommendations
 
 ---
 
 ## Prerequisites
 
 - Python 3.10+
-- AWS account with Bedrock access enabled for **Claude Haiku 4.5** (`us.anthropic.claude-haiku-4-5-20251001-v1:0`)
-- IAM permissions for the services being analyzed (EC2, RDS, S3, CloudWatch, Cost Explorer, etc.)
+- An AWS account for the **deployment** (runs the app, needs Bedrock access to
+  `us.anthropic.claude-haiku-4-5-20251001-v1:0`)
+- The AWS account(s) you want to **analyse** — connected per-session through
+  the UI, can be different from the deployment account
 
 ---
 
@@ -51,7 +60,9 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Edit `.env` with your credentials:
+Edit `.env` — see [.env.example](.env.example) for the full list. At minimum
+you need credentials for the **deployment account** (the one that calls
+Bedrock):
 
 ```env
 AWS_ACCESS_KEY_ID=your-access-key
@@ -59,80 +70,83 @@ AWS_SECRET_ACCESS_KEY=your-secret-key
 AWS_DEFAULT_REGION=us-east-1
 ```
 
+Credentials for the account you want to *analyse* are **not** set here — you
+enter them through the UI after logging in (see below).
+
 ---
 
 ## Running
 
-Query your real AWS account:
 ```bash
-python3 main.py
+python3 chat.py
 ```
 
-**Debug mode** — prints raw stream chunk types (useful for troubleshooting):
+This opens `http://127.0.0.1:8000` in your browser. Sign in (defaults to
+`Admin` / `Admin@123` — override with `AUTH_USERNAME` / `AUTH_PASSWORD` in
+`.env` for anything beyond local testing), then open the **AWS Account**
+panel and paste an access key, secret key, and — for temporary `ASIA*`
+credentials — a session token for the account you want to analyse. Those
+keys are held in memory for your login session only; nothing is written to
+disk.
+
+For a deployed (non-local) run, start uvicorn directly instead:
+
 ```bash
-python3 main.py --debug
+uvicorn server:app --host 0.0.0.0 --port 8000
 ```
+
+In that case the deployment account's credentials should come from an
+instance profile or ECS task role rather than `.env`.
 
 ---
 
-## Output
-
-Each run creates a timestamped folder under `output/`:
+## Project structure
 
 ```
-output/
-  20260722_143512/
-    report.md     ← full Markdown report
-    report.html   ← styled dark-theme HTML
-    report.json   ← structured findings per service
+.
+├── chat.py                  # Local launcher — opens browser, starts uvicorn
+├── server.py                # FastAPI app: routes, SSE streaming, session CRUD
+├── auth.py                  # Login sessions (single shared username/password)
+├── credentials.py           # Per-login-session AWS keys, held in memory, STS-validated
+├── aws_session.py           # boto3 client cache, keyed by (session, service, region)
+├── deployment.py            # Health checks for the app's own Bedrock/STS credentials
+├── chat_db.py                # chat_history.db — session list + message log for the UI
+├── agents/
+│   └── chat_agent.py        # build_chat_agent() — model, tools, system prompt
+├── tools/
+│   ├── aws_api.py           # call_aws_api() — allowlisted boto3 caller
+│   └── python_repl.py       # execute_python() — sandboxed subprocess
+├── static/
+│   ├── index.html           # Chat + analysis UI (vanilla JS, no build step)
+│   ├── login.html           # Sign-in page
+│   └── deepagent-flow.html  # Rendered visual walkthrough of the agent loop
+├── deploy/
+│   ├── iam-policy-analysed-account.json   # Read-only role for accounts being scanned
+│   └── iam-policy-deployment-account.json # Bedrock-invoke role for the app itself
+├── tests/                   # pytest — auth, credentials, tool allowlist, sandbox isolation
+├── requirements.txt
+└── .env.example
 ```
 
-Previous runs are never overwritten.
+`langgraph.db` (agent conversation checkpoints) and `chat_history.db`
+(display history) are created automatically on first run and are not
+committed to version control.
 
 ---
 
-## Optional: LangSmith Tracing
+## Documentation
 
-Add to `.env` to enable zero-code tracing of every agent call:
+- [Architecture.md](Architecture.md) — design thesis, request flow, trade-offs
+- [TECHNICAL.md](TECHNICAL.md) — routes, SSE event schemas, persistence details
+
+---
+
+## Optional: LangSmith tracing
+
+Add to `.env` to enable tracing of every agent call:
 
 ```env
 LANGCHAIN_TRACING_V2=true
 LANGCHAIN_API_KEY=your-langsmith-api-key
 LANGCHAIN_PROJECT=cloud-cost-advisor
-```
-
----
-
-## Project Structure
-
-```
-.
-├── main.py                  # Entry point — CLI, streaming loop, output
-├── config.py                # Bedrock model config
-├── agents/
-│   ├── orchestrator.py      # Master DeepAgent
-│   ├── ec2_agent.py
-│   ├── ebs_agent.py
-│   ├── rds_agent.py
-│   ├── s3_agent.py
-│   ├── network_agent.py
-│   ├── savings_agent.py
-│   ├── lambda_agent.py
-│   ├── cloudwatch_agent.py
-│   └── report_agent.py
-├── tools/
-│   ├── aws_client.py        # boto3 client factory, CloudWatch batch helper
-│   ├── ec2_tools.py
-│   ├── ebs_tools.py
-│   ├── rds_tools.py
-│   ├── s3_tools.py
-│   ├── network_tools.py
-│   ├── lambda_tools.py
-│   ├── cloudwatch_tools.py
-│   ├── savings_tools.py
-│   ├── report_tools.py      # JSON + HTML report writers
-│   └── cost_calculator.py   # Shared pricing helpers
-├── requirements.txt
-├── .env.example
-└── .gitignore
 ```

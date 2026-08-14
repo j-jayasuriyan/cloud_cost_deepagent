@@ -6,11 +6,10 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-import boto3
 import botocore.exceptions
 import aiosqlite
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel

@@ -30,7 +30,9 @@ A split-panel web app for AWS cost intelligence. The left panel is a conversatio
 ### Architecture
 
 ```
-Browser (static/index.html)
+Browser (static/login.html, static/index.html)
+    │  POST /login, POST /logout
+    │  GET/POST/DELETE /credentials   (AWS keys for the account being analysed)
     │  POST /chat            (SSE — chat responses)
     │  POST /analysis/run    (SSE — optimization analysis)
     │  GET  /analysis        (current analysis state)
@@ -38,7 +40,8 @@ Browser (static/index.html)
     │  DELETE /sessions/{id}, /sessions
     ▼
 FastAPI  (server.py)
-    │  lifespan: STS → account context, AsyncSqliteSaver, build_chat_agent()
+    │  require_login middleware: every route but /login and /health needs a session cookie
+    │  lifespan: check_bedrock_invoke(), WAL mode, AsyncSqliteSaver, build_chat_agent()
     │  /chat          → SSE event_stream → agent.astream()
     │  /analysis/run  → SSE stream()    → agent.astream() on fresh thread
     ▼
@@ -48,6 +51,14 @@ DeepAgent  (agents/chat_agent.py)
     ├──▶  call_aws_api(service, operation, params)   → any boto3 call → JSON
     └──▶  execute_python(code, context_json)          → sandboxed subprocess
 ```
+
+Two AWS identities are in play and must not be confused: the **deployment
+account** (whatever credentials the server process itself resolves — env vars,
+instance profile, or task role — used only to call Bedrock) and the
+**analysed account** (the keys a signed-in user pastes into the Credentials
+panel, held in memory per login session, used only to call `call_aws_api`).
+`deployment.py` health-checks the former; `credentials.py`/`aws_session.py`
+manage the latter.
 
 ---
 
@@ -72,7 +83,11 @@ DeepAgent  (agents/chat_agent.py)
 ```
 cloud_cost_deepAgent/
 ├── chat.py              # launcher — opens browser, starts uvicorn
-├── server.py            # FastAPI app, SSE streaming, session endpoints
+├── server.py            # FastAPI app, SSE streaming, auth middleware, session endpoints
+├── auth.py              # login sessions — single shared username/password
+├── credentials.py       # per-login-session AWS keys for the analysed account (in memory)
+├── aws_session.py       # boto3 client cache, keyed by (login session, service, region)
+├── deployment.py        # health checks for the deployment's own Bedrock/STS credentials
 ├── chat_db.py           # chat_history.db — session list + message log
 ├── agents/
 │   └── chat_agent.py    # build_chat_agent() using create_deep_agent
@@ -80,7 +95,8 @@ cloud_cost_deepAgent/
 │   ├── aws_api.py       # call_aws_api() — universal boto3 caller
 │   └── python_repl.py   # execute_python() — sandboxed Python subprocess
 ├── static/
-│   └── index.html       # full chat UI (vanilla JS, no build step)
+│   ├── login.html       # sign-in page
+│   └── index.html       # full chat + analysis UI (vanilla JS, no build step)
 ├── langgraph.db         # LangGraph checkpoints (agent memory per thread)
 └── chat_history.db      # session metadata + message log (for history panel)
 ```
@@ -128,19 +144,37 @@ create_deep_agent(
 
 ### Context block
 
-Injected at build time with runtime-known facts so the agent never calls tools to look them up:
+Injected once at build time (server startup) with the one fact that's genuinely
+static for the process lifetime — today's date:
 
 ```
 ## Current AWS Session
-- Account ID: 123456789012
-- Region: us-east-1
-- Caller ARN: arn:aws:iam::123456789012:user/...
-- Today's date: <date.today().isoformat() at server startup>
+- Today's date: 2026-08-14
 
-Always use <today> as the end date when constructing date ranges.
+The account ID and region under analysis are stated at the top of each request.
+Use them directly — do NOT call APIs to look them up.
+Always use 2026-08-14 as the end date when constructing date ranges for AWS API calls.
 ```
 
-`today` is set at startup so the agent uses the correct end date for Cost Explorer queries (its training knowledge stops in 2025).
+`today` is fixed at startup so the agent uses the correct end date for Cost
+Explorer queries (its training knowledge stops earlier). The **account ID is
+deliberately not in this block** — a single agent instance is shared by every
+login session, and different sessions can have different AWS keys entered
+against different accounts. Baking an account ID in at startup would leak one
+user's account into another's answers.
+
+Instead, `server.py`'s `_account_preamble()` resolves the *current* session's
+account via STS and prepends it to each individual request:
+
+```
+[AWS context — account 111122223333, region us-east-1. Use these directly; do not look them up.]
+
+<the user's actual message>
+```
+
+This runs on every `/chat` and `/analysis/run` call, so it always reflects
+whichever credentials that login session has entered most recently (see
+`credentials.py`, `aws_session.py`).
 
 ### Model
 
@@ -187,22 +221,48 @@ Use cases: totals, averages, trend analysis, "what if" simulations, filtering, s
 
 Runs once at startup:
 
-1. Calls STS `GetCallerIdentity` → sets `AWS_ACCOUNT_ID` env var
+1. `deployment.check_bedrock_invoke()` — confirms the deployment's own credentials can reach STS *and* invoke the Bedrock model; logs the verdict (does not raise — sign-in is refused later if this failed, per-request, rather than crashing startup)
 2. Opens `langgraph.db` briefly to set `PRAGMA journal_mode=WAL` (allows concurrent connections for delete endpoints)
 3. Creates `AsyncSqliteSaver` as the agent's checkpointer
 4. Builds the agent with `build_chat_agent(saver, ctx)` → stored in `app.state.agent`
+
+### Authentication & credentials
+
+A `require_login` middleware guards every route except `/login` and `/health`.
+It checks the `cca_session` cookie against `auth.py`'s in-memory session
+store; HTML requests without a valid cookie are redirected to `/login`,
+everything else gets a `401`.
+
+Two distinct credential sets flow through the app — see the diagram in
+[§1](#1-system-overview) — and neither ever touches disk:
+
+- **Login** (`auth.py`) — one shared username/password (env-configurable),
+  gates access to the app itself.
+- **Analysed-account keys** (`credentials.py`, `aws_session.py`) — the AWS
+  access key / secret / session token a signed-in user pastes into the
+  Credentials panel. Validated against STS *before* being accepted, stored
+  in memory keyed by login session only, and used to build a per-session
+  boto3 client cache. Clearing credentials or logging out drops both the
+  keys and any cached clients for that session.
 
 ### Routes
 
 | Method | Path | Purpose |
 |---|---|---|
+| `GET` | `/login` | Serve `static/login.html` |
+| `POST` | `/login` | Verify username/password, set the session cookie |
+| `POST` | `/logout` | Clear login session, analysed-account credentials, and cached boto3 clients |
+| `GET` | `/credentials` | Current analysed-account identity for this session (no key material) |
+| `POST` | `/credentials` | Validate and store analysed-account keys for this session |
+| `DELETE` | `/credentials` | Forget the analysed-account keys for this session |
 | `GET` | `/` | Serve `static/index.html` |
-| `GET` | `/health` | Liveness check |
-| `GET` | `/status` | STS credential check — returns `{ok, account, arn, region}` |
-| `GET` | `/sessions` | List all sessions from `chat_history.db` |
-| `GET` | `/sessions/{id}/messages` | Messages for one session |
-| `DELETE` | `/sessions/{id}` | Delete one session from both DBs |
-| `DELETE` | `/sessions` | Delete all sessions from both DBs |
+| `GET` | `/health` | Liveness check (public, no auth) |
+| `GET` | `/deployment` | Deployment's own Bedrock/STS health — `{ok, error, account_id, region}` |
+| `GET` | `/status` | STS check on the *analysed* account for this session — `{ok, account, arn, region}` |
+| `GET` | `/sessions` | List all chat sessions from `chat_history.db` |
+| `GET` | `/sessions/{id}/messages` | Messages for one chat session |
+| `DELETE` | `/sessions/{id}` | Delete one chat session from both DBs |
+| `DELETE` | `/sessions` | Delete all chat sessions from both DBs |
 | `POST` | `/chat` | SSE stream — runs the agent for chat |
 | `GET` | `/analysis` | Returns current analysis state (`status`, `result`, `updated_at`, `logs`) |
 | `POST` | `/analysis/run` | SSE stream — runs the optimization analysis agent |
@@ -211,11 +271,18 @@ Runs once at startup:
 
 ```python
 async for chunk, _metadata in app.state.agent.astream(
-    {"messages": [{"role": "user", "content": req.message}]},
-    config={"configurable": {"thread_id": req.thread_id}},
+    {"messages": [{"role": "user",
+                   "content": _account_preamble(session) + req.message}]},
+    config={"configurable": {"thread_id": req.thread_id, "session_id": session}},
     stream_mode="messages",
 ):
 ```
+
+`session_id` in `config.configurable` is how `call_aws_api` (via LangChain's
+injected `RunnableConfig`) knows which login session's AWS keys to use —
+it's never part of what the model sees. `_account_preamble()` prepends the
+resolved account ID and region as plain text in the message content, since
+that part *is* meant for the model to read (see [§5](#5-agent--chat_agentpy)).
 
 Chunk types and actions:
 
@@ -362,13 +429,22 @@ Corrupted session recovery: `'thread-' + secrets.token_hex(6)` (server-generated
 
 ## 12. Environment Variables
 
+These all describe the **deployment account** — the credentials the server
+process itself resolves, used only to reach STS (health checks) and Bedrock
+(the model). The **analysed account** has no environment variables at all;
+its keys come from the UI and live only in `credentials.py`'s in-memory
+store (see [§Authentication & credentials](#authentication--credentials)).
+
 | Variable | Required | Set by | Description |
 |---|---|---|---|
-| `AWS_ACCESS_KEY_ID` | Yes | `.env` / shell | AWS access key |
-| `AWS_SECRET_ACCESS_KEY` | Yes | `.env` / shell | AWS secret key |
+| `AWS_ACCESS_KEY_ID` | Yes, unless using an instance/task role | `.env` / shell | Deployment account access key |
+| `AWS_SECRET_ACCESS_KEY` | Yes, unless using an instance/task role | `.env` / shell | Deployment account secret key |
 | `AWS_SESSION_TOKEN` | For SSO/assumed-role | `.env` / shell | Temporary session token |
-| `AWS_DEFAULT_REGION` | Yes | `.env` / shell | Target region, e.g. `us-east-1` |
-| `AWS_ACCOUNT_ID` | Internal | `server.py` lifespan | Set from STS at startup; injected into agent system prompt |
+| `AWS_DEFAULT_REGION` | Yes | `.env` / shell | Region for STS/Bedrock calls, e.g. `us-east-1` |
+| `AUTH_USERNAME` | No — defaults to `Admin` | `.env` / shell | Login username (`auth.py`) |
+| `AUTH_PASSWORD` | No — defaults to `Admin@123` | `.env` / shell | Login password; override in every real deployment |
+| `COOKIE_SECURE` | No — defaults to `true` | `.env` / shell | Set `false` only for plain-HTTP local runs; must stay `true` behind TLS |
+| `LANGCHAIN_TRACING_V2`, `LANGCHAIN_API_KEY`, `LANGCHAIN_PROJECT` | No | `.env` / shell | Optional LangSmith tracing |
 
 ---
 
@@ -401,7 +477,16 @@ The server detects this, generates a new thread ID, and yields `session_corrupte
 
 ### Credential expiry
 
-`GET /status` is called on page load. If STS returns `ExpiredTokenException` or similar, the UI shows an error banner with instructions to refresh credentials and restart the server.
+`GET /status` is called on page load and checks the **analysed account's**
+credentials via STS. If it returns `ExpiredTokenException` or similar, the UI
+shows an error banner prompting the user to re-enter keys in the AWS Account
+panel — no server restart needed, since those credentials live in memory per
+session (`credentials.py`), not in `.env`.
+
+`GET /deployment` covers the other credential set — the **deployment
+account's** own Bedrock/STS access. If that fails, `/login` refuses new
+sign-ins (see `deployment.check()` in [§7](#7-server--serverpy)), since no
+amount of re-entering analysed-account keys can fix a broken deployment role.
 
 ---
 
