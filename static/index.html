@@ -344,6 +344,97 @@
     }
     #history-btn:hover { border-color: var(--accent); color: var(--accent); }
 
+    #logout-btn {
+      margin-left: 8px;
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      padding: 6px 12px;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    #logout-btn:hover { border-color: var(--error); color: var(--error); }
+
+    #creds-btn {
+      margin-left: 8px;
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      padding: 6px 12px;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    #creds-btn:hover { border-color: var(--accent); color: var(--accent); }
+    #creds-btn.unset { border-color: var(--error); color: var(--error); }
+
+    #creds-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.6);
+      display: none; z-index: 40;
+    }
+    #creds-overlay.open { display: block; }
+
+    #creds-modal {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      width: min(460px, calc(100vw - 32px));
+      max-height: calc(100vh - 48px); overflow-y: auto;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 22px; z-index: 41; display: none;
+    }
+    #creds-modal.open { display: block; }
+    #creds-modal h2 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+
+    .creds-note {
+      font-size: 11.5px; color: var(--muted); line-height: 1.55; margin-bottom: 16px;
+    }
+
+    #creds-active {
+      display: none; font-size: 12px; border-radius: 6px;
+      padding: 9px 12px; margin-bottom: 16px; line-height: 1.5;
+      background: rgba(39,174,96,.1); border: 1px solid rgba(39,174,96,.35);
+      color: var(--green);
+    }
+    #creds-active.show { display: block; }
+    #creds-active button {
+      background: none; border: none; color: var(--muted); cursor: pointer;
+      font-size: 11px; text-decoration: underline; padding: 0; margin-top: 4px;
+    }
+
+    .creds-field { margin-bottom: 12px; }
+    .creds-field label {
+      display: block; font-size: 10.5px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .06em;
+      color: var(--muted); margin-bottom: 5px;
+    }
+    .creds-opt { text-transform: none; letter-spacing: 0; font-weight: 400; }
+    .creds-field input, .creds-field textarea {
+      width: 100%; background: var(--bg); border: 1px solid var(--border);
+      border-radius: 6px; padding: 8px 10px; color: var(--text);
+      font-size: 12.5px; font-family: "SF Mono", Menlo, monospace; resize: vertical;
+    }
+    .creds-field input:focus, .creds-field textarea:focus {
+      outline: none; border-color: var(--accent);
+    }
+
+    #creds-error {
+      display: none; font-size: 12px; line-height: 1.5;
+      background: rgba(192,57,43,.12); border: 1px solid rgba(192,57,43,.4);
+      border-radius: 6px; padding: 9px 12px; margin-bottom: 12px; color: #f2837a;
+    }
+    #creds-error.show { display: block; }
+
+    .creds-actions { display: flex; gap: 8px; justify-content: flex-end; }
+    .creds-actions button {
+      border-radius: 6px; padding: 8px 16px; font-size: 13px;
+      font-family: inherit; cursor: pointer;
+    }
+    .creds-cancel { background: none; border: 1px solid var(--border); color: var(--muted); }
+    .creds-save { background: var(--accent); border: none; color: #fff; font-weight: 600; }
+    .creds-save:disabled { opacity: .6; cursor: default; }
+
     /* ── History panel ── */
     #history-overlay {
       display: none;
@@ -643,13 +734,52 @@
   <div class="logo">☁️</div>
   <div>
     <h1>AWS Cost Advisor</h1>
+    <div class="sub" id="deploy-account" title="Account hosting this app and billed for Bedrock"></div>
   </div>
   <button id="history-btn" onclick="openHistory()">🕐 History</button>
+  <button id="creds-btn" onclick="openCreds()">🔑 AWS Account</button>
+  <button id="logout-btn" onclick="logout()">Sign out</button>
   <div class="status" style="margin-left:12px">
     <div class="dot" id="status-dot"></div>
     <span id="status-text">Checking credentials…</span>
   </div>
 </header>
+
+<div id="creds-overlay" onclick="closeCreds()"></div>
+<div id="creds-modal" role="dialog" aria-label="AWS account credentials">
+  <h2>AWS Account to Analyse</h2>
+  <p class="creds-note">
+    Keys are held in memory for this login session only — never written to disk
+    and never sent to the model. Signing out or restarting the server clears them.
+  </p>
+
+  <div id="creds-active"></div>
+
+  <div class="creds-field">
+    <label for="ck-id">Access Key ID</label>
+    <input id="ck-id" autocomplete="off" spellcheck="false" placeholder="AKIA… or ASIA…">
+  </div>
+  <div class="creds-field">
+    <label for="ck-secret">Secret Access Key</label>
+    <input id="ck-secret" type="password" autocomplete="off" spellcheck="false">
+  </div>
+  <div class="creds-field">
+    <label for="ck-token">Session Token <span class="creds-opt">— required for ASIA keys</span></label>
+    <textarea id="ck-token" rows="2" autocomplete="off" spellcheck="false"
+              placeholder="Only needed for temporary credentials"></textarea>
+  </div>
+  <div class="creds-field">
+    <label for="ck-region">Region</label>
+    <input id="ck-region" value="us-east-1" autocomplete="off" spellcheck="false">
+  </div>
+
+  <div id="creds-error"></div>
+
+  <div class="creds-actions">
+    <button class="creds-cancel" onclick="closeCreds()">Cancel</button>
+    <button class="creds-save" id="creds-save" onclick="saveCreds()">Connect</button>
+  </div>
+</div>
 
 <!-- History panel -->
 <div id="history-overlay" onclick="closeHistory()"></div>
@@ -855,6 +985,10 @@
   const statusDot    = document.getElementById('status-dot');
   const statusText   = document.getElementById('status-text');
 
+  // Header label for the connected account. Chat replaces the status text while
+  // it works, so it needs something to put back afterwards.
+  let _accountLabel = '';
+
   // ── Credential check on page load ─────────────────────────────────────────
   async function checkCredentials() {
     sendBtn.disabled = true;
@@ -862,15 +996,24 @@
 
     try {
       const res  = await fetch('/status');
+      if (res.status === 401) { window.location.href = '/login'; return; }
       const data = await res.json();
 
       checkingEl.style.display = 'none';
 
       if (data.ok) {
-        // Credentials valid — update header and show normal UI
+        // Credentials valid — update header and show normal UI. Reset anything
+        // the failure branch may have left behind, since this now re-runs
+        // whenever the user connects a different account.
         statusDot.className  = 'dot';
-        statusText.textContent = `${data.account} · ${data.region}`;
+        statusDot.style.background = '';
+        // Remembered so transient states ("Thinking…", tool names) can restore it.
+        _accountLabel = `${data.account} · ${data.region}`;
+        statusText.textContent = _accountLabel;
+        credBanner.style.display = 'none';
         emptyEl.style.display  = 'flex';
+        suggestEl.style.display = '';
+        inputEl.placeholder = 'Ask about your AWS costs…';
         sendBtn.disabled = false;
         inputEl.disabled = false;
         inputEl.focus();
@@ -879,21 +1022,25 @@
         // Credentials invalid — show banner, lock input
         statusDot.style.background = 'var(--error)';
         statusText.textContent = 'Session invalid';
+        _accountLabel = '';
 
         const MESSAGES = {
           ExpiredTokenException: 'AWS Session Expired',
           ExpiredToken:          'AWS Session Expired',
           InvalidClientTokenId:  'Invalid AWS Credentials',
           NoCredentialProviders: 'No AWS Credentials Found',
+          NoCredentials:         'No AWS Account Connected',
         };
         document.getElementById('cred-title').textContent =
           MESSAGES[data.code] || 'AWS Authentication Failed';
         document.getElementById('cred-detail').textContent =
-          data.error || 'Unable to authenticate with AWS.';
+          (data.error || 'Unable to authenticate with AWS.') +
+          ' Use the AWS Account button above to enter keys.';
 
         credBanner.style.display = 'flex';
         suggestEl.style.display  = 'none';
-        inputEl.placeholder = 'AWS session invalid — refresh credentials and restart';
+        inputEl.placeholder = 'Connect an AWS account to start';
+        clearAnalysisPanel();
       }
     } catch (err) {
       checkingEl.style.display   = 'none';
@@ -906,7 +1053,27 @@
     }
   }
 
-  checkCredentials();
+  startup();
+
+  // The deployment's own Bedrock credentials are checked before anything else —
+  // if they are dead, no user action can succeed, so end the session rather than
+  // let someone sit in an app that cannot answer.
+  async function startup() {
+    const res = await fetch('/deployment');
+    if (res.status === 401) { window.location.href = '/login'; return; }
+    const health = await res.json();
+    if (!health.ok) {
+      await fetch('/logout', { method: 'POST' });
+      window.location.href = '/login?error=' + encodeURIComponent(health.error || '');
+      return;
+    }
+    // Show nothing rather than "undefined" if the field is absent — an older
+    // server build, or a probe that could not resolve the account.
+    document.getElementById('deploy-account').textContent =
+      health.account_id ? `Deployed in ${health.account_id} · ${health.region}` : '';
+    checkCredentials();
+    promptForCredentialsIfNeeded();
+  }
 
   // ── Auto-resize textarea ──────────────────────────────────────────────────
   inputEl.addEventListener('input', () => {
@@ -1098,7 +1265,7 @@
     busy = false;
     sendBtn.disabled = false;
     statusDot.className = 'dot';
-    statusText.textContent = 'Ready';
+    statusText.textContent = _accountLabel || 'Ready';
     inputEl.focus();
     scrollBottom();
   }
@@ -1112,6 +1279,100 @@
     historyPanel.classList.add('open');
     historyOverlay.classList.add('open');
     loadSessionList();
+  }
+
+  async function logout() {
+    await fetch('/logout', { method: 'POST' });
+    window.location.href = '/login';
+  }
+
+  // ── AWS account credentials ────────────────────────────────────────────────
+
+  function openCreds() {
+    document.getElementById('creds-overlay').classList.add('open');
+    document.getElementById('creds-modal').classList.add('open');
+    document.getElementById('creds-error').classList.remove('show');
+    loadCreds();
+  }
+
+  function closeCreds() {
+    document.getElementById('creds-overlay').classList.remove('open');
+    document.getElementById('creds-modal').classList.remove('open');
+    // Never leave key material sitting in the DOM.
+    document.getElementById('ck-secret').value = '';
+    document.getElementById('ck-token').value  = '';
+  }
+
+  async function loadCreds() {
+    const res = await fetch('/credentials');
+    if (res.status === 401) { window.location.href = '/login'; return; }
+    const data = await res.json();
+
+    const active = document.getElementById('creds-active');
+    const btn    = document.getElementById('creds-btn');
+
+    if (data.configured) {
+      active.innerHTML =
+        `Connected to <strong>${data.account_id}</strong> · ${data.region} ` +
+        `· key ${data.access_key_hint}<br>` +
+        `<button onclick="disconnectCreds()">Disconnect</button>`;
+      active.classList.add('show');
+      btn.classList.remove('unset');
+      document.getElementById('ck-region').value = data.region;
+    } else {
+      active.classList.remove('show');
+      btn.classList.add('unset');
+    }
+    return data.configured;
+  }
+
+  // Nothing can be read without keys, so ask for them as soon as the user lands.
+  async function promptForCredentialsIfNeeded() {
+    const res = await fetch('/credentials');
+    if (res.status === 401) { window.location.href = '/login'; return; }
+    if (!(await res.json()).configured) openCreds();
+    else loadCreds();
+  }
+
+  async function saveCreds() {
+    const btn   = document.getElementById('creds-save');
+    const error = document.getElementById('creds-error');
+    error.classList.remove('show');
+    btn.disabled = true;
+    btn.textContent = 'Verifying…';
+
+    const res = await fetch('/credentials', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        access_key_id:     document.getElementById('ck-id').value.trim(),
+        secret_access_key: document.getElementById('ck-secret').value.trim(),
+        session_token:     document.getElementById('ck-token').value.trim(),
+        region:            document.getElementById('ck-region').value.trim() || 'us-east-1',
+      }),
+    });
+
+    btn.disabled = false;
+    btn.textContent = 'Connect';
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      error.textContent = body.detail || 'Could not verify these credentials.';
+      error.classList.add('show');
+      return;
+    }
+
+    closeCreds();
+    document.getElementById('ck-id').value = '';
+    await checkCredentials();
+    await loadAnalysis();
+  }
+
+  async function disconnectCreds() {
+    await fetch('/credentials', { method: 'DELETE' });
+    clearAnalysisPanel();
+    await loadCreds();
+    await checkCredentials();
   }
 
   function closeHistory() {
@@ -1402,6 +1663,15 @@
       : '<div style="font-size:12px;color:var(--muted)">No recommendations — your environment looks well-optimized!</div>';
   }
 
+  // A report belongs to the account it was produced from. Whenever that account
+  // changes or goes away, the panel must not keep showing the old numbers.
+  function clearAnalysisPanel() {
+    _logQueue     = [];
+    _logDoneCount = 0;
+    setRpState('idle');
+    setRpUpdated(null);
+  }
+
   async function loadAnalysis() {
     try {
       const res  = await fetch('/analysis');
@@ -1410,6 +1680,8 @@
         renderAnalysis(data.result);
         setRpState('done');
         setRpUpdated(data.updated_at);
+      } else if (_rpState !== 'running') {
+        clearAnalysisPanel();
       }
     } catch { /* server not ready yet */ }
   }

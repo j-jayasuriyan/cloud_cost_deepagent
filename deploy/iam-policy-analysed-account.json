@@ -1,0 +1,139 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CostExplorerRead",
+      "Effect": "Allow",
+      "Action": [
+        "ce:GetCostAndUsage",
+        "ce:GetCostAndUsageWithResources",
+        "ce:GetCostForecast",
+        "ce:GetDimensionValues",
+        "ce:GetReservationCoverage",
+        "ce:GetReservationPurchaseRecommendation",
+        "ce:GetReservationUtilization",
+        "ce:GetRightsizingRecommendation",
+        "ce:GetSavingsPlansCoverage",
+        "ce:GetSavingsPlansPurchaseRecommendation",
+        "ce:GetSavingsPlansUtilization",
+        "ce:GetTags"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ComputeAndDatabaseInventoryRead",
+      "Effect": "Allow",
+      "Action": [
+        "autoscaling:Describe*",
+        "ec2:Describe*",
+        "elasticloadbalancing:Describe*",
+        "lambda:GetFunctionConfiguration",
+        "lambda:ListFunctions",
+        "lambda:ListTags",
+        "rds:Describe*",
+        "rds:ListTagsForResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "StorageInventoryRead",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketLocation",
+        "s3:GetBucketTagging",
+        "s3:GetBucketVersioning",
+        "s3:GetLifecycleConfiguration",
+        "s3:ListAllMyBuckets",
+        "s3:ListBucket"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "MetricsRead",
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:DescribeAlarms",
+        "cloudwatch:GetMetricData",
+        "cloudwatch:GetMetricStatistics",
+        "cloudwatch:ListMetrics",
+        "logs:DescribeLogGroups"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "PricingAndAdvisoryRead",
+      "Effect": "Allow",
+      "Action": [
+        "pricing:DescribeServices",
+        "pricing:GetAttributeValues",
+        "pricing:GetProducts",
+        "savingsplans:DescribeSavingsPlans",
+        "savingsplans:DescribeSavingsPlansOfferings",
+        "support:DescribeTrustedAdvisorCheckResult",
+        "support:DescribeTrustedAdvisorChecks"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "IdentityContextRead",
+      "Effect": "Allow",
+      "Action": [
+        "iam:ListRoles",
+        "iam:ListUsers",
+        "organizations:DescribeOrganization",
+        "organizations:ListAccounts",
+        "sts:GetCallerIdentity"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyMutationBackstop",
+      "Effect": "Deny",
+      "Action": [
+        "ec2:AttachVolume",
+        "ec2:DeleteSnapshot",
+        "ec2:DeleteVolume",
+        "ec2:DetachVolume",
+        "ec2:ModifyInstanceAttribute",
+        "ec2:ModifyVolume",
+        "ec2:RebootInstances",
+        "ec2:RunInstances",
+        "ec2:StopInstances",
+        "ec2:TerminateInstances",
+        "elasticloadbalancing:DeleteLoadBalancer",
+        "iam:Attach*",
+        "iam:Create*",
+        "iam:Delete*",
+        "iam:Put*",
+        "iam:Update*",
+        "lambda:DeleteFunction",
+        "lambda:UpdateFunctionConfiguration",
+        "rds:DeleteDBInstance",
+        "rds:ModifyDBInstance",
+        "rds:RebootDBInstance",
+        "rds:StopDBInstance",
+        "s3:DeleteBucket",
+        "s3:DeleteObject",
+        "s3:PutBucketPolicy",
+        "s3:PutObject"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyCredentialExfiltration",
+      "Effect": "Deny",
+      "Action": [
+        "iam:GenerateCredentialReport",
+        "iam:GetCredentialReport",
+        "kms:Decrypt",
+        "secretsmanager:GetSecretValue",
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+        "ssm:GetParametersByPath",
+        "sts:GetFederationToken",
+        "sts:GetSessionToken"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

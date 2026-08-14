@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in — AWS Cost Advisor</title>
+  <style>
+    :root {
+      --bg:        #0f1117;
+      --surface:   #1a1d27;
+      --border:    #2a2d3a;
+      --accent:    #4f7bef;
+      --accent-dk: #3a5fc4;
+      --text:      #e2e4ed;
+      --muted:     #8b8fa8;
+      --error:     #c0392b;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 32px;
+      width: 100%;
+      max-width: 360px;
+    }
+
+    .brand { margin-bottom: 24px; }
+    .brand h1 { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+    .brand p { font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+    form { display: flex; flex-direction: column; gap: 14px; }
+
+    label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    input {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      color: var(--text);
+      font-size: 14px;
+      font-family: inherit;
+    }
+    input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(79, 123, 239, 0.15);
+    }
+
+    button {
+      background: var(--accent);
+      border: none;
+      border-radius: 6px;
+      padding: 11px;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      margin-top: 4px;
+    }
+    button:hover:not(:disabled) { background: var(--accent-dk); }
+    button:disabled { opacity: 0.6; cursor: default; }
+
+    .error {
+      background: rgba(192, 57, 43, 0.12);
+      border: 1px solid rgba(192, 57, 43, 0.4);
+      border-radius: 6px;
+      padding: 9px 12px;
+      font-size: 13px;
+      color: #f2837a;
+      display: none;
+    }
+    .error.show { display: block; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">
+      <h1>AWS Cost Advisor</h1>
+      <p>Sign in to continue</p>
+    </div>
+
+    <div class="error" id="error" role="alert"></div>
+
+    <form id="form">
+      <div>
+        <label for="username">Username</label>
+        <input id="username" name="username" autocomplete="username" autofocus required>
+      </div>
+      <div>
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+      </div>
+      <button type="submit" id="submit">Sign in</button>
+    </form>
+  </div>
+
+  <script>
+    const form = document.getElementById('form');
+    const errorBox = document.getElementById('error');
+    const submit = document.getElementById('submit');
+
+    // Set when the app signed the user out because the deployment's own AWS
+    // credentials stopped working.
+    const deploymentError = new URLSearchParams(location.search).get('error');
+    if (deploymentError) {
+      errorBox.textContent = 'Deployment error — ' + deploymentError;
+      errorBox.classList.add('show');
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errorBox.classList.remove('show');
+      submit.disabled = true;
+      submit.textContent = 'Signing in…';
+
+      const res = await fetch('/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: document.getElementById('username').value,
+          password: document.getElementById('password').value,
+        }),
+      });
+
+      if (res.ok) {
+        window.location.href = new URLSearchParams(location.search).get('next') || '/';
+        return;
+      }
+
+      const body = await res.json().catch(() => ({}));
+      errorBox.textContent = body.detail || 'Sign in failed.';
+      errorBox.classList.add('show');
+      submit.disabled = false;
+      submit.textContent = 'Sign in';
+      document.getElementById('password').value = '';
+      document.getElementById('password').focus();
+    });
+  </script>
+</body>
+</html>

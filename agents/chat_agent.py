@@ -71,18 +71,17 @@ _TOOLS = [call_aws_api, execute_python]
 
 def build_chat_agent(checkpointer, aws_ctx: dict | None = None):
     ctx = aws_ctx or {}
-    account_id = ctx.get("account_id", os.environ.get("AWS_ACCOUNT_ID", "unknown"))
-    region     = ctx.get("region",     os.environ.get("AWS_DEFAULT_REGION", "unknown"))
-    arn        = ctx.get("arn", "")
-    today      = date.today().isoformat()
+    region = ctx.get("region", os.environ.get("AWS_DEFAULT_REGION", "us-east-1"))
+    today  = date.today().isoformat()
 
+    # The account under analysis is per-request, not per-process: different users
+    # can supply credentials for different accounts against this one agent.
     context_block = f"""
-## Current AWS Session (do NOT call APIs to look these up — already known)
-- **Account ID**: {account_id}
-- **Region**: {region}
-- **Caller ARN**: {arn}
+## Current AWS Session
 - **Today's date**: {today}
 
+The account ID and region under analysis are stated at the top of each request.
+Use them directly — do NOT call APIs to look them up.
 Always use {today} as the end date when constructing date ranges for AWS API calls.
 """
     model = ChatBedrockConverse(model_id=_MODEL_ID, region_name=region, timeout=300)

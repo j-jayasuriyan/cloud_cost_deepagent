@@ -10,12 +10,16 @@ import boto3
 import botocore.exceptions
 import aiosqlite
 from dotenv import load_dotenv
-from fastapi import FastAPI
-from fastapi.responses import StreamingResponse, HTMLResponse
+from fastapi import FastAPI, Request, Response
+from fastapi.responses import StreamingResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import auth
+import aws_session
 import chat_db
+import credentials
+import deployment
 
 load_dotenv(dotenv_path=Path(__file__).parent / ".env")
 
@@ -24,22 +28,30 @@ _LG_DB = _HERE / "langgraph.db"
 _LG_TABLES = ("checkpoint_writes", "checkpoint_blobs", "checkpoints")
 
 
-def _fetch_account_context() -> dict:
-    try:
-        identity = boto3.client("sts").get_caller_identity()
-        return {
-            "account_id": identity["Account"],
-            "region": os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
-            "arn": identity["Arn"],
-        }
-    except Exception:
-        return {"account_id": "unknown", "region": os.environ.get("AWS_DEFAULT_REGION", ""), "arn": ""}
+def _fetch_account_context(session: str | None = None) -> dict:
+    """Identity of the account being analysed — not the one hosting the app."""
+    identity = aws_session.verify_target_identity(session)
+    return {
+        "account_id": identity["Account"],
+        "region": aws_session.target_region(session),
+        "arn": identity["Arn"],
+    }
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    ctx = _fetch_account_context()
-    os.environ["AWS_ACCOUNT_ID"] = ctx["account_id"]
+    # The account under analysis arrives later from the UI, but the deployment's
+    # own Bedrock credentials must work now — without them nothing the user does
+    # can succeed.
+    # flush=True: stdout is block-buffered when piped, and a startup diagnostic
+    # that only appears once the buffer fills is useless in container logs.
+    ok, why = deployment.check_bedrock_invoke()
+    if ok:
+        print("Bedrock credentials OK", flush=True)
+    else:
+        print(f"DEPLOYMENT ERROR: {why}", flush=True)
+        print("Sign-in is refused until this is fixed.", flush=True)
+    ctx = {}
 
     # WAL mode lets the delete endpoints open short-lived connections
     # alongside the long-lived AsyncSqliteSaver connection.
@@ -63,6 +75,119 @@ class ChatRequest(BaseModel):
     thread_id: str = "default"
 
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+_PUBLIC_PATHS = frozenset({"/login", "/health"})
+
+# Set COOKIE_SECURE=false only for plain-HTTP local runs; behind TLS it must stay on.
+_COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "true").lower() != "false"
+
+
+@app.middleware("http")
+async def require_login(request: Request, call_next):
+    if request.url.path in _PUBLIC_PATHS:
+        return await call_next(request)
+
+    if auth.is_valid_session(request.cookies.get(auth.SESSION_COOKIE)):
+        return await call_next(request)
+
+    # Page loads get sent to the form; fetch/SSE callers get a status they can act on.
+    if "text/html" in request.headers.get("accept", ""):
+        return RedirectResponse(f"/login?next={request.url.path}", status_code=303)
+    return JSONResponse({"detail": "Authentication required"}, status_code=401)
+
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page():
+    return (_HERE / "static" / "login.html").read_text()
+
+
+@app.post("/login")
+async def login(req: LoginRequest):
+    # Refuse the session rather than let someone in to an app that cannot work.
+    ok, why = deployment.check()
+    if not ok:
+        return JSONResponse(
+            {"detail": f"Deployment error — {why}", "deployment_error": True},
+            status_code=503,
+        )
+
+    if not auth.verify_credentials(req.username, req.password):
+        return JSONResponse({"detail": "Invalid username or password."}, status_code=401)
+
+    response = JSONResponse({"ok": True})
+    response.set_cookie(
+        auth.SESSION_COOKIE,
+        auth.create_session(),
+        max_age=auth.session_max_age(),
+        httponly=True,
+        samesite="lax",
+        secure=_COOKIE_SECURE,
+    )
+    return response
+
+
+@app.post("/logout")
+async def logout(request: Request):
+    token = request.cookies.get(auth.SESSION_COOKIE)
+    credentials.clear(token)
+    aws_session.forget_session(token)
+    auth.destroy_session(token)
+    response = JSONResponse({"ok": True})
+    response.delete_cookie(auth.SESSION_COOKIE)
+    return response
+
+
+class CredentialsRequest(BaseModel):
+    access_key_id: str
+    secret_access_key: str
+    session_token: str = ""
+    region: str = "us-east-1"
+
+
+def _session_of(request: Request) -> str | None:
+    return request.cookies.get(auth.SESSION_COOKIE)
+
+
+@app.get("/credentials")
+async def get_credentials(request: Request):
+    creds = credentials.get(_session_of(request))
+    if creds:
+        return {"configured": True, **creds.describe()}
+    return {"configured": False}
+
+
+@app.post("/credentials")
+async def set_credentials(request: Request, req: CredentialsRequest):
+    try:
+        creds = credentials.validate(
+            req.access_key_id.strip(),
+            req.secret_access_key.strip(),
+            req.session_token.strip(),
+            req.region.strip() or "us-east-1",
+        )
+    except credentials.CredentialError as e:
+        return JSONResponse({"detail": str(e)}, status_code=400)
+
+    session = _session_of(request)
+    credentials.save(session, creds)
+    aws_session.forget_session(session)
+    _ANALYSIS.pop(session, None)
+    return {"ok": True, **creds.describe()}
+
+
+@app.delete("/credentials")
+async def delete_credentials(request: Request):
+    session = _session_of(request)
+    credentials.clear(session)
+    aws_session.forget_session(session)
+    _ANALYSIS.pop(session, None)
+    return {"ok": True}
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index():
     return (_HERE / "static" / "index.html").read_text()
@@ -73,17 +198,30 @@ async def health():
     return {"status": "ok"}
 
 
+@app.get("/deployment")
+async def deployment_status():
+    ok, why = deployment.check()
+    return {
+        "ok": ok,
+        "error": why,
+        "account_id": deployment.account_id(),
+        "region": os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
+    }
+
+
 @app.get("/status")
-async def status():
+async def status(request: Request):
+    session = _session_of(request)
+    if not aws_session.has_credentials(session):
+        return {"ok": False, "code": "NoCredentials",
+                "error": "No AWS account connected yet."}
     try:
-        identity = boto3.client(
-            "sts", region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
-        ).get_caller_identity()
+        identity = aws_session.target_client("sts", session).get_caller_identity()
         return {
             "ok": True,
             "account": identity["Account"],
             "arn": identity["Arn"],
-            "region": os.environ.get("AWS_DEFAULT_REGION", ""),
+            "region": aws_session.target_region(session),
         }
     except botocore.exceptions.ClientError as e:
         return {"ok": False, "code": e.response["Error"]["Code"], "error": e.response["Error"]["Message"]}
@@ -147,19 +285,45 @@ async def delete_all_sessions():
     return {"ok": True}
 
 
+def _account_preamble(session: str | None) -> str:
+    """
+    Stated per request because each login session may target a different account.
+    The agent's system prompt deliberately carries no account ID.
+    """
+    try:
+        ctx = _fetch_account_context(session)
+    except RuntimeError as e:
+        return f"[AWS context unavailable: {e}]\n\n"
+    return (
+        f"[AWS context — account {ctx['account_id']}, region {ctx['region']}. "
+        f"Use these directly; do not look them up.]\n\n"
+    )
+
+
 @app.post("/chat")
-async def chat(req: ChatRequest):
+async def chat(request: Request, req: ChatRequest):
+    session = _session_of(request)
+
+    if not aws_session.has_credentials(session):
+        async def _no_creds():
+            yield _sse("error", "No AWS account connected. Enter your access key, "
+                                "secret key, and session token in the AWS Account panel.")
+            yield _sse("done", "")
+        return StreamingResponse(_no_creds(), media_type="text/event-stream")
+
     async def event_stream():
         title = req.message[:60] + ("…" if len(req.message) > 60 else "")
         chat_db.upsert_session(req.thread_id, title)
+        # History stores what the user typed, not the preamble we add for the agent.
         chat_db.save_message(req.thread_id, "user", req.message)
 
-        config = {"configurable": {"thread_id": req.thread_id}}
+        config = {"configurable": {"thread_id": req.thread_id, "session_id": session}}
         assistant_parts: list[str] = []
 
         try:
             async for chunk, _metadata in app.state.agent.astream(
-                {"messages": [{"role": "user", "content": req.message}]},
+                {"messages": [{"role": "user",
+                               "content": _account_preamble(session) + req.message}]},
                 config=config,
                 stream_mode="messages",
             ):
@@ -214,15 +378,23 @@ def _sse(event_type: str, data: str) -> str:
 
 # ── Cost Optimization Analysis ────────────────────────────────────────────────
 
-_ANALYSIS: dict = {
-    "status": "idle",   # idle | running | done | error
-    "result": None,
-    "updated_at": None,
-    "logs": [],
-}
+# Keyed by login session — two users may be analysing different accounts, so a
+# single shared result would show each of them the other's numbers.
+_ANALYSIS: dict[str | None, dict] = {}
 
 
-def _build_analysis_prompt() -> str:
+def _analysis_state(session: str | None) -> dict:
+    if session not in _ANALYSIS:
+        _ANALYSIS[session] = {
+            "status": "idle",   # idle | running | done | error
+            "result": None,
+            "updated_at": None,
+            "logs": [],
+        }
+    return _ANALYSIS[session]
+
+
+def _build_analysis_prompt(session: str | None = None) -> str:
     today_obj = date.today()
     today  = today_obj.isoformat()
     year_i, month_i = today_obj.year, today_obj.month
@@ -236,6 +408,7 @@ def _build_analysis_prompt() -> str:
     prev_start   = f"{prev_month}-01"
 
     return (
+        _account_preamble(session) +
         f"Analyze this AWS account's costs and resources for {month}. Today: {today}.\n\n"
         "Follow these steps in order:\n"
         f"1. Current month costs by SERVICE: call_aws_api(\"ce\", \"get_cost_and_usage\") "
@@ -312,32 +485,43 @@ def _parse_analysis_json(text: str) -> dict | None:
 
 
 @app.get("/analysis")
-async def get_analysis():
+async def get_analysis(request: Request):
+    state = _analysis_state(_session_of(request))
     return {
-        "status": _ANALYSIS["status"],
-        "result": _ANALYSIS["result"],
-        "updated_at": _ANALYSIS["updated_at"],
-        "logs": _ANALYSIS["logs"][-30:],
+        "status": state["status"],
+        "result": state["result"],
+        "updated_at": state["updated_at"],
+        "logs": state["logs"][-30:],
     }
 
 
 @app.post("/analysis/run")
-async def run_analysis():
-    if _ANALYSIS["status"] == "running":
+async def run_analysis(request: Request):
+    session = _session_of(request)
+    state = _analysis_state(session)
+
+    if state["status"] == "running":
         async def _already():
             yield _sse("status", "running")
             yield _sse("done", "")
         return StreamingResponse(_already(), media_type="text/event-stream")
 
+    if not aws_session.has_credentials(session):
+        async def _no_creds():
+            yield _sse("error", "No AWS account connected. Enter your keys in the "
+                                "AWS Account panel.")
+            yield _sse("done", "")
+        return StreamingResponse(_no_creds(), media_type="text/event-stream")
+
     async def stream():
-        _ANALYSIS["status"] = "running"
-        _ANALYSIS["logs"] = []
-        _ANALYSIS["result"] = None
+        state["status"] = "running"
+        state["logs"] = []
+        state["result"] = None
         yield _sse("status", "running")
 
-        prompt = _build_analysis_prompt()
+        prompt = _build_analysis_prompt(session)
         thread_id = "analysis-" + secrets.token_hex(4)
-        config = {"configurable": {"thread_id": thread_id}}
+        config = {"configurable": {"thread_id": thread_id, "session_id": session}}
         text_parts: list[str] = []
         py_outputs: list[str] = []
 
@@ -361,7 +545,7 @@ async def run_analysis():
                                 f"{args.get('service','')}.{args.get('operation','')}"
                                 if name == "call_aws_api" else "execute_python"
                             )
-                            _ANALYSIS["logs"].append(log)
+                            state["logs"].append(log)
                             yield _sse("log", log)
 
                 elif ctype == "ToolMessage":
@@ -381,18 +565,18 @@ async def run_analysis():
                 result = _parse_analysis_json("".join(text_parts))
 
             if result:
-                _ANALYSIS.update({
+                state.update({
                     "status": "done",
                     "result": result,
                     "updated_at": datetime.now(timezone.utc).isoformat(),
                 })
                 yield _sse("result", json.dumps(result))
             else:
-                _ANALYSIS["status"] = "error"
+                state["status"] = "error"
                 yield _sse("error", "Could not extract structured result from agent output")
 
         except Exception as exc:
-            _ANALYSIS["status"] = "error"
+            state["status"] = "error"
             yield _sse("error", str(exc)[:300])
 
         yield _sse("done", "")

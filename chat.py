@@ -25,11 +25,29 @@ URL  = f"http://{HOST}:{PORT}"
 
 
 def _check_credentials():
-    missing = [v for v in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY") if not os.environ.get(v)]
-    if missing:
-        print(f"Error: Missing AWS credentials: {', '.join(missing)}")
-        print("Set them in .env or via export before running chat.py")
+    """
+    Resolve credentials the way boto3 will at runtime.
+
+    Checking AWS_ACCESS_KEY_ID directly would reject instance profiles and ECS
+    task roles, which supply credentials without setting those variables.
+    """
+    import boto3
+    import botocore.exceptions
+
+    try:
+        identity = boto3.client(
+            "sts", region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+        ).get_caller_identity()
+    except botocore.exceptions.NoCredentialsError:
+        print("Error: No AWS credentials found.")
+        print("Set them in .env, run `aws sso login`, or attach an instance/task role.")
         sys.exit(1)
+    except botocore.exceptions.ClientError as e:
+        print(f"Error: AWS rejected the credentials — {e.response['Error']['Code']}")
+        print(e.response["Error"]["Message"])
+        sys.exit(1)
+
+    print(f"AWS account {identity['Account']} — {identity['Arn'].rsplit('/', 1)[-1]}")
 
 
 def _open_browser():
@@ -44,7 +62,13 @@ if __name__ == "__main__":
     # Ensure the working directory is the project root so uvicorn can import server.py
     os.chdir(Path(__file__).parent)
 
+    # This launcher serves plain HTTP on loopback, where a Secure cookie is
+    # rejected by some browsers. Deployments run uvicorn directly and keep the
+    # default of Secure=on.
+    os.environ.setdefault("COOKIE_SECURE", "false")
+
     print(f"Starting AWS Cost Advisor at {URL}")
+    print(f"Sign in as {os.environ.get('AUTH_USERNAME', 'Admin')}")
     print("Press Ctrl+C to stop.\n")
 
     threading.Thread(target=_open_browser, daemon=True).start()

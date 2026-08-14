@@ -1,0 +1,35 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "BedrockModelInvoke",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream"
+      ],
+      "Resource": [
+        "arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
+        "arn:aws:bedrock:REGION:DEPLOYMENT_ACCOUNT_ID:inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0"
+      ]
+    },
+    {
+      "Sid": "ReadAnalysedAccountKeysFromSecretsManager",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:GetSecretValue"
+      ],
+      "Resource": [
+        "arn:aws:secretsmanager:REGION:DEPLOYMENT_ACCOUNT_ID:secret:cost-advisor/analysed-account-*"
+      ]
+    },
+    {
+      "Sid": "OwnIdentityOnly",
+      "Effect": "Allow",
+      "Action": [
+        "sts:GetCallerIdentity"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
