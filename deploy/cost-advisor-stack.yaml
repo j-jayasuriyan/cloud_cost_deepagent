@@ -1,0 +1,209 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  AWS Cloud Cost Advisor — single EC2 instance, no TLS (poc). The account is
+  at its 10-VPC-per-region quota in us-east-1 (and 6/6 in us-east-2), so this
+  deploys into the existing "commute-app-vpc-dev" VPC's public subnet
+  (owner-confirmed) rather than creating a dedicated one. One IAM role, one
+  security group, one key pair, one instance — no new networking resources.
+  Deleting this stack deletes everything it created except the VPC/subnet,
+  which it never owned; the instance's EBS volume is snapshotted first
+  (DeletionPolicy: Snapshot) so langgraph.db / chat_history.db aren't lost
+  to an ordinary stack deletion.
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Default: vpc-0e94f1b1a01fc616f
+    Description: Existing "commute-app-vpc-dev" VPC — reused because the account is at its VPC quota.
+  PublicSubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Default: subnet-0336074e043adbaa3
+    Description: commute-app-public-subnet-az1-dev — routed to igw-0380f08f6974c6f36, MapPublicIpOnLaunch=true.
+  SourceCidr:
+    Type: String
+    Default: 122.167.99.252/32
+    Description: CIDR allowed to reach the app on port 8000. No SSH port is opened at all — use SSM Session Manager.
+  InstanceType:
+    Type: String
+    Default: t3.small
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64
+  RepoUrl:
+    Type: String
+    Default: https://github.com/j-jayasuriyan/cloud_cost_deepagent.git
+  RepoBranch:
+    Type: String
+    Default: dev
+  AuthUsername:
+    Type: String
+    Default: Admin
+    Description: Login username for the app. AUTH_PASSWORD is generated on-instance at boot, not passed through CloudFormation, so it never appears in stack parameters/outputs/console.
+  BedrockInferenceProfileId:
+    Type: String
+    Default: us.anthropic.claude-haiku-4-5-20251001-v1:0
+    Description: The cross-region inference profile ID the app requests (agents/chat_agent.py's _MODEL_ID).
+  BedrockFoundationModelId:
+    Type: String
+    Default: anthropic.claude-haiku-4-5-20251001-v1:0
+    Description: Same model, without the region prefix — the underlying foundation-model ARN the inference profile can route to. Kept as its own parameter rather than derived, since Fn::Sub can't strip the "us." prefix.
+
+Resources:
+
+  DeploymentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: cost-advisor-deployment
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        # Enables SSM Session Manager shell access — no inbound SSH port needed.
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: bedrock-and-sts
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: BedrockModelInvoke
+                Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - !Sub "arn:aws:bedrock:*::foundation-model/${BedrockFoundationModelId}"
+                  - !Sub "arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${BedrockInferenceProfileId}"
+              - Sid: OwnIdentityOnly
+                Effect: Allow
+                Action: sts:GetCallerIdentity
+                Resource: "*"
+      Tags:
+        - { Key: Name, Value: cost-advisor-deployment }
+        - { Key: Project, Value: cost-advisor }
+        - { Key: ManagedBy, Value: CloudFormation }
+        - { Key: Environment, Value: poc }
+        - { Key: Owner, Value: Jayasuriyan }
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: cost-advisor-deployment
+      Roles: [ !Ref DeploymentRole ]
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: cost-advisor app port only, no SSH - shell access is via SSM
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8000
+          ToPort: 8000
+          CidrIp: !Ref SourceCidr
+      Tags:
+        - { Key: Name, Value: cost-advisor-sg }
+        - { Key: Project, Value: cost-advisor }
+        - { Key: ManagedBy, Value: CloudFormation }
+        - { Key: Environment, Value: poc }
+        - { Key: Owner, Value: Jayasuriyan }
+
+  KeyPair:
+    Type: AWS::EC2::KeyPair
+    Properties:
+      KeyName: cost-advisor-key
+      Tags:
+        - { Key: Name, Value: cost-advisor-key }
+        - { Key: Project, Value: cost-advisor }
+        - { Key: ManagedBy, Value: CloudFormation }
+        - { Key: Environment, Value: poc }
+        - { Key: Owner, Value: Jayasuriyan }
+      # CloudFormation stores the private key automatically in SSM Parameter
+      # Store at /ec2/keypair/{KeyPairId} — not used for access (SSM Session
+      # Manager covers that), kept only for optional future direct SSH.
+
+  Instance:
+    Type: AWS::EC2::Instance
+    DeletionPolicy: Snapshot
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyPair
+      IamInstanceProfile: !Ref InstanceProfile
+      SubnetId: !Ref PublicSubnetId
+      SecurityGroupIds: [ !Ref SecurityGroup ]
+      Tags:
+        - { Key: Name, Value: cost-advisor-server }
+        - { Key: Project, Value: cost-advisor }
+        - { Key: ManagedBy, Value: CloudFormation }
+        - { Key: Environment, Value: poc }
+        - { Key: Owner, Value: Jayasuriyan }
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          exec > >(tee /var/log/cost-advisor-bootstrap.log) 2>&1
+          set -eux
+
+          dnf install -y python3.12 python3.12-pip git
+
+          mkdir -p /opt/cost-advisor
+          chown ec2-user:ec2-user /opt/cost-advisor
+          sudo -u ec2-user git clone --branch ${RepoBranch} --depth 1 ${RepoUrl} /opt/cost-advisor
+
+          cd /opt/cost-advisor
+          sudo -u ec2-user python3.12 -m venv .venv
+          sudo -u ec2-user .venv/bin/pip install -r requirements.txt
+
+          # Generated on-instance so the password never transits CloudFormation
+          # parameters, stack events, or console output. xtrace (-x) is off for
+          # this block specifically — with it on, `set -x` would echo the
+          # GENERATED_PASSWORD assignment to stderr, which the `exec > tee`
+          # above sends straight into cost-advisor-bootstrap.log, defeating
+          # the whole point.
+          set +x
+          GENERATED_PASSWORD=$(openssl rand -base64 18)
+          cat > /opt/cost-advisor/.env <<EOF
+          AWS_DEFAULT_REGION=${AWS::Region}
+          AUTH_USERNAME=${AuthUsername}
+          AUTH_PASSWORD=${!GENERATED_PASSWORD}
+          COOKIE_SECURE=false
+          EOF
+          set -x
+          chown ec2-user:ec2-user /opt/cost-advisor/.env
+          chmod 600 /opt/cost-advisor/.env
+
+          cat > /etc/systemd/system/cost-advisor.service <<'UNIT'
+          [Unit]
+          Description=AWS Cloud Cost Advisor (FastAPI)
+          After=network.target
+
+          [Service]
+          Type=simple
+          User=ec2-user
+          Group=ec2-user
+          WorkingDirectory=/opt/cost-advisor
+          ExecStart=/opt/cost-advisor/.venv/bin/uvicorn server:app --host 0.0.0.0 --port 8000
+          Restart=on-failure
+          RestartSec=5
+
+          [Install]
+          WantedBy=multi-user.target
+          UNIT
+
+          systemctl daemon-reload
+          systemctl enable --now cost-advisor
+
+Outputs:
+  InstanceId:
+    Value: !Ref Instance
+  PublicIp:
+    Value: !GetAtt Instance.PublicIp
+  AppUrl:
+    Value: !Sub "http://${Instance.PublicIp}:8000"
+  RetrievePasswordCommand:
+    Description: AUTH_PASSWORD was generated on-instance and never left it — read it over SSM, not from this stack.
+    Value: !Sub >-
+      aws ssm send-command --instance-ids ${Instance} --document-name AWS-RunShellScript
+      --parameters commands="grep AUTH_PASSWORD /opt/cost-advisor/.env" --region ${AWS::Region}

@@ -1,0 +1,19 @@
+[Unit]
+Description=AWS Cloud Cost Advisor (FastAPI)
+After=network.target
+
+[Service]
+Type=simple
+User=ec2-user
+Group=ec2-user
+WorkingDirectory=/opt/cost-advisor
+ExecStart=/opt/cost-advisor/.venv/bin/uvicorn server:app --host 0.0.0.0 --port 8000
+Restart=on-failure
+RestartSec=5
+
+# Written for a fresh AL2023 instance profile — no AWS_* vars needed here.
+# .env (AUTH_USERNAME/PASSWORD, AWS_DEFAULT_REGION, COOKIE_SECURE) is loaded
+# by server.py itself via python-dotenv; nothing to set here.
+
+[Install]
+WantedBy=multi-user.target

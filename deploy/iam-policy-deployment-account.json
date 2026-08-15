@@ -14,16 +14,6 @@
       ]
     },
     {
-      "Sid": "ReadAnalysedAccountKeysFromSecretsManager",
-      "Effect": "Allow",
-      "Action": [
-        "secretsmanager:GetSecretValue"
-      ],
-      "Resource": [
-        "arn:aws:secretsmanager:REGION:DEPLOYMENT_ACCOUNT_ID:secret:cost-advisor/analysed-account-*"
-      ]
-    },
-    {
       "Sid": "OwnIdentityOnly",
       "Effect": "Allow",
       "Action": [
