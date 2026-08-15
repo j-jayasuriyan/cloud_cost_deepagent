@@ -142,7 +142,7 @@ flowchart TB
 
 ## 3. What `create_deep_agent` builds
 
-The call in [`agents/chat_agent.py:89`](agents/chat_agent.py#L89) is deliberately minimal:
+The call in [`agents/chat_agent.py:89`](../agents/chat_agent.py#L89) is deliberately minimal:
 
 ```python
 create_deep_agent(
@@ -189,7 +189,7 @@ flowchart LR
 **Architectural consequence.** Because 9 tools arrive uninvited, the frontend progress
 log cannot simply count `tool_end` events — a `write_todos` call would corrupt the
 step counter. The UI therefore filters to `call_aws_api` and `execute_python` only.
-The same holds for the analysis log in [`server.py:358`](server.py#L358).
+The same holds for the analysis log in [`server.py:358`](../server.py#L358).
 
 > **Note.** `task` and `execute` are registered but not exercised by current prompts.
 > `execute` in particular is a shell-execution capability that is present and reachable —
@@ -293,7 +293,7 @@ zero domain-specific code.
 
 ## 6. Two request paths, one agent
 
-The agent is built **once** at server startup ([`server.py:53`](server.py#L53)) and stored
+The agent is built **once** at server startup ([`server.py:53`](../server.py#L53)) and stored
 as `app.state.agent`. Both endpoints call `.astream()` on that same object. Three things
 differentiate them:
 
@@ -334,7 +334,7 @@ not whatever you happened to ask ten minutes earlier.
 
 **Why the prose is discarded.** The analysis endpoint reads the `execute_python`
 ToolMessage content — not the model's narration — and parses JSON out of it
-([`server.py:370`](server.py#L370)). The prompt ends with *"execute_python must be your
+([`server.py:370`](../server.py#L370)). The prompt ends with *"execute_python must be your
 FINAL action. Print ONLY the JSON."* Three fallback parse strategies handle the cases
 where the model wraps it in a code fence or adds commentary anyway.
 
@@ -388,7 +388,7 @@ Both are auto-created on first run and listed in `.gitignore`.
   which is why evaluation needs seeded fixtures and multi-run scoring rather than
   single-shot assertions
 - **Unbounded blast radius** — `call_aws_api` has no operation allowlist
-  ([`tools/aws_api.py:47`](tools/aws_api.py#L47) does `getattr(client, operation)`), so
+  ([`tools/aws_api.py:47`](../tools/aws_api.py#L47) does `getattr(client, operation)`), so
   IAM policy is the only thing preventing a destructive call
 - **`execute_python` is not sandboxed** despite its docstring — it is a plain
   `subprocess.run` sharing the user, environment, filesystem, and network, with AWS
@@ -407,4 +407,5 @@ open-ended coverage.
 ## Related documents
 
 - [`TECHNICAL.md`](TECHNICAL.md) — implementation reference: routes, SSE event tables, schemas
-- [`static/deepagent-flow.html`](static/deepagent-flow.html) — the same flow as a rendered visual page
+- [`Infra.md`](Infra.md) — deployment architecture: AWS resources, IAM, network, redeploy process
+- [`../static/deepagent-flow.html`](../static/deepagent-flow.html) — the same flow as a rendered visual page

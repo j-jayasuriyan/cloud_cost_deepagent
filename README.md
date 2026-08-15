@@ -1,37 +1,5 @@
 # AWS Cloud Cost Optimization Advisor
 
-A web app that lets a signed-in user connect any AWS account and ask an AI agent
-free-form questions about it — costs, resource inventory, waste, rightsizing —
-plus run a one-click structured cost-optimization scan.
-
-Built with [DeepAgents](https://docs.langchain.com/oss/python/deepagents/overview)
-(LangChain/LangGraph), Claude Haiku 4.5 on Amazon Bedrock, and FastAPI.
-
----
-
-## How it works
-
-The agent has exactly two tools instead of one function per question:
-
-| Tool | What it does |
-|---|---|
-| `call_aws_api(service, operation, params)` | Any read-only boto3 operation on any AWS service |
-| `execute_python(code, context_json)` | Sandboxed Python for calculations over the JSON that came back |
-
-That's enough to answer questions nobody wrote code for — "which gp2 volumes
-should be gp3?", "project my spend if I stop the dev fleet" — without a code
-change per question. See [Architecture.md](Architecture.md) for the full
-design rationale and trade-offs.
-
-The app is split into two panels:
-
-- **Chat** — free-form questions, streamed answers, persistent history per thread
-- **Cost Analysis** — a scripted 7-step scan (Cost Explorer, EC2, EBS, RDS,
-  load balancers, Savings Plans) that produces a dashboard of prioritized
-  recommendations
-
----
-
 ## Prerequisites
 
 - Python 3.10+
@@ -136,8 +104,13 @@ committed to version control.
 
 ## Documentation
 
-- [Architecture.md](Architecture.md) — design thesis, request flow, trade-offs
-- [TECHNICAL.md](TECHNICAL.md) — routes, SSE event schemas, persistence details
+| Doc | In repo | Rendered artifact |
+|---|---|---|
+| Architecture — design thesis, request flow, trade-offs | [documentation/Architecture.md](documentation/Architecture.md) | [artifact](https://claude.ai/code/artifact/2cf83a8b-b32f-4fa9-8d79-6bfb3e4f1a71) |
+| Technical — routes, SSE event schemas, persistence details | [documentation/TECHNICAL.md](documentation/TECHNICAL.md) | [artifact](https://claude.ai/code/artifact/32668ac9-7afe-4472-b48e-b9f2485c6e06) |
+| Infra — deployment architecture, AWS resources, IAM, redeploy process | [documentation/Infra.md](documentation/Infra.md) | [artifact](https://claude.ai/code/artifact/6a0e75af-e05d-4b75-8153-5d276bde0eb7) |
+
+Artifacts are private by default — share them from the artifact page's share menu if you want to hand a link to someone without repo access.
 
 ---
 
