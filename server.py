@@ -14,13 +14,13 @@ from fastapi.responses import StreamingResponse, HTMLResponse, JSONResponse, Red
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+load_dotenv(dotenv_path=Path(__file__).parent / ".env")
+
 import auth
 import aws_session
 import chat_db
 import credentials
 import deployment
-
-load_dotenv(dotenv_path=Path(__file__).parent / ".env")
 
 _HERE  = Path(__file__).parent
 _LG_DB = _HERE / "langgraph.db"
