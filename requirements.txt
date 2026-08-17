@@ -6,4 +6,6 @@ fastapi
 uvicorn
 langgraph-checkpoint-sqlite
 aiosqlite
+numpy
+statsmodels
 pytest

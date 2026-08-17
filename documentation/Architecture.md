@@ -36,28 +36,41 @@ answers. Everything below is that loop in more detail.
 - [6. Two request paths, one agent](#6-two-request-paths-one-agent)
 - [7. Persistence](#7-persistence)
 - [8. Design trade-offs](#8-design-trade-offs)
+- [9. Cost forecasting — adaptive model selection](#9-cost-forecasting--adaptive-model-selection)
 
 ---
 
 ## 1. Design thesis
 
-**Two universal tools instead of dozens of specific ones.**
+**Two universal tools instead of dozens of specific ones — plus one deliberate exception.**
 
 A conventional AWS cost tool hardcodes one function per question: `get_ec2_costs()`,
 `find_unattached_volumes()`, `check_rds_rightsizing()`. Every new question needs new code.
 
-This system ships exactly two domain tools:
+This system ships two universal domain tools, plus one purpose-built one:
 
 | Tool | What it does |
 |---|---|
 | `call_aws_api(service, operation, params)` | Any boto3 operation on any AWS service |
 | `execute_python(code, context_json)` | Arbitrary Python over the JSON that came back |
+| `forecast_costs(monthly_costs, periods_ahead)` | Adaptive multi-model time-series forecast (§9) |
 
-Together they span the entire AWS API surface plus arbitrary computation over the
-results. The agent composes them at runtime to answer questions nobody wrote code for.
-"Which gp2 volumes should be gp3?" and "project my Q3 spend if I stop the dev fleet"
-both work without a code change — the reasoning that used to live in Python now lives
-in the model's tool-selection loop.
+Together the first two span the entire AWS API surface plus arbitrary computation over
+the results. The agent composes them at runtime to answer questions nobody wrote code
+for. "Which gp2 volumes should be gp3?" and "project my Q3 spend if I stop the dev
+fleet" both work without a code change — the reasoning that used to live in Python now
+lives in the model's tool-selection loop.
+
+**Why `forecast_costs` breaks that pattern on purpose.** Cost projection used to be
+"whatever `execute_python` code the model happens to write" — in practice, a flat
+average with no backtesting, no model comparison, and no honesty about how little
+history actually supports a forecast. Getting that right (fit several candidate
+models, backtest each, pick the one that generalizes) is real, non-trivial logic that
+should be consistent and tested, not re-derived by the model on every call — and it
+needs `numpy`/`statsmodels`, imports too slow to fit inside `execute_python`'s 10-second
+sandbox timeout reliably. So it's a real tool with real code behind it, same as
+`call_aws_api`, not something left to the model's freehand Python. See §9 for the
+model-selection design.
 
 **DeepAgents supplies the loop.** The project does not implement agent orchestration.
 `create_deep_agent()` provides the reason → call tool → observe → repeat cycle, plus
@@ -400,10 +413,67 @@ Both are auto-created on first run and listed in `.gitignore`.
 
 **The alternative that was replaced.** An earlier design used a master orchestrator
 delegating to eight specialist sub-agents (EC2, EBS, RDS, S3, Network, Savings, Lambda,
-CloudWatch) with roughly ten tool modules. That structure is still described in
-`README.md`, which is now stale. It was more predictable but required a code change for
-every new question — the two-universal-tools design trades that predictability for
-open-ended coverage.
+CloudWatch) with roughly ten tool modules. `README.md` described that structure for a
+while after it was replaced; it's since been rewritten to match the current one. It was
+more predictable but required a code change for every new question — the
+two-universal-tools design trades that predictability for open-ended coverage.
+
+---
+
+## 9. Cost forecasting — adaptive model selection
+
+`forecast_costs` (§1) is the one tool that doesn't fit the "let the model figure it
+out" philosophy, and for a specific reason: cost projection is exactly the kind of
+task where an LLM's freehand approach — average the numbers it can see — is
+indistinguishable from confidence it hasn't earned. Nothing stops the model from
+presenting a flat average as if it accounted for trend; it looks the same either way
+until you check.
+
+**What it does instead of averaging.**
+
+```mermaid
+flowchart LR
+    H["Historical monthly\ntotals (from ce.get_cost_and_usage)"] --> FIT
+
+    subgraph FIT["Fit every applicable candidate"]
+        direction TB
+        N["naive_average\n(>=3 months)"]
+        L["linear_trend\n(>=3 months)"]
+        S["simple_exponential_smoothing\n(>=4 months)"]
+        HO["holt_linear_trend\n(>=8 months)"]
+    end
+
+    FIT --> BT["Backtest each:\none-step-ahead walk-forward MAE"]
+    BT --> PICK["Lowest backtest error wins"]
+    PICK --> OUT["Refit winner on full history\n-> forecast + model name + backtest MAE"]
+
+    style FIT fill:#3a66d8,stroke:#2848a8,color:#fff
+    style BT fill:#a86e00,stroke:#7a5000,color:#fff
+    style PICK fill:#0e9267,stroke:#0a6b4c,color:#fff
+```
+
+**Backtesting, not in-sample fit.** Each candidate is scored by refitting on a growing
+prefix of the history and predicting one step ahead — how it would actually have
+performed as data arrived — not by how well it fits the data it was trained on, which
+flatters complex models for the wrong reason.
+
+**Gated by how much history genuinely supports each model**, not just whether it
+happens to run without crashing: a 2-parameter trend model needs more than 3 data
+points to mean anything. Nothing here attempts seasonal decomposition — Cost
+Explorer's real ceiling is 37 months (confirmed directly from the API: requesting
+more throws `ValidationException: We don't support your chosen duration. The
+maximum data available is 37 months`), which is barely 3 yearly cycles. A seasonal
+model could technically be fit on that, but 3 observations per calendar month is
+thin enough that it's still closer to memorizing noise than learning a pattern —
+deliberately left out rather than shipped with false confidence. Worth
+reconsidering if that ceiling ever moves.
+
+**Runs as a real tool, not `execute_python` code.** Two reasons: `execute_python`'s
+sandbox has a 10-second wall-clock timeout, tight for importing `statsmodels` plus
+fitting several models; and `forecast_costs` needs no AWS or network access, so the
+sandbox's isolation guarantees buy nothing here anyway. See
+[`tools/forecast_tools.py`](../tools/forecast_tools.py) and
+[`tests/test_forecast_tools.py`](../tests/test_forecast_tools.py).
 
 ---
 

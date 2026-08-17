@@ -4,6 +4,7 @@ from deepagents import create_deep_agent
 
 from tools.python_repl import execute_python
 from tools.aws_api import call_aws_api
+from tools.forecast_tools import forecast_costs
 
 _MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 
@@ -24,7 +25,10 @@ Calls any boto3 operation on any AWS service and returns the raw JSON response.
 
 Common patterns:
 ```
-# Monthly cost breakdown — always derive dates from today's date in the session context
+# Recent monthly cost breakdown — always derive dates from today's date in the
+# session context. 6 months back is fine for "what am I spending recently" —
+# for forecasting/projection questions, see forecast_costs below instead, which
+# needs more history than this.
 call_aws_api("ce", "get_cost_and_usage", '{
   "TimePeriod": {"Start": "<6 months ago, 1st of month>", "End": "<today>"},
   "Granularity": "MONTHLY",
@@ -53,8 +57,37 @@ Runs Python in a sandbox for calculations, aggregations, filtering, and analysis
 - Inside the code, `_ctx` is the already-parsed object — use directly, no `json.loads` needed
 - Print the final answer to stdout
 
-Use this for: totals, averages, filtering, trend analysis, cost projections, grouped summaries,
-"what if" simulations, sorting, percentages.
+Use this for: totals, averages, filtering, grouped summaries, "what if" simulations,
+sorting, percentages. **Not for cost projections/forecasts — use `forecast_costs`
+instead; do not hand-average or extrapolate future costs yourself.**
+
+### forecast_costs(monthly_costs, periods_ahead=6)
+Forecasts future monthly costs from historical monthly totals. Internally fits every
+model the history can support (naive average, linear trend, simple exponential
+smoothing, Holt's linear trend), backtests each, and returns whichever generalized
+best — not a flat average, not the model you'd hand-write.
+
+- `monthly_costs`: JSON array of historical monthly totals, oldest first — extract
+  these numbers from a `call_aws_api("ce", "get_cost_and_usage")` result first.
+  **Fetch at least 12 months of history for this** (Cost Explorer supports up to
+  37 — asking for more throws a clear `ValidationException` you can back off
+  from). The generic 6-month example above is for a quick recent breakdown, not
+  for feeding this tool — 6 months makes `holt_linear_trend` (needs >=8) never
+  eligible and gives every other model fewer backtest folds to be judged on.
+- `periods_ahead`: how many future months to forecast (default 6)
+- The result includes `candidates`: every model considered, including ones not
+  applicable to this much history and why. **Always summarize this comparison in
+  your answer** — which models were tried, which won and by what backtest margin,
+  and why any were excluded (e.g. "Holt's trend model needs 8+ months, you have 6").
+  Never present just the winning number with no explanation of how it was chosen —
+  that's indistinguishable from a guess to the user.
+- If the forecast is flat, say why (e.g. the winning model has no trend term, or the
+  history doesn't show a consistent enough trend for a trend model to have won the
+  backtest) — don't let a flat forecast look like nothing happened.
+- Needs at least 3 months of history; returns an error otherwise, which you should
+  relay honestly rather than projecting from too little data
+
+Use this whenever the user asks to project, forecast, or estimate future spend.
 
 ## Rules
 
@@ -65,7 +98,7 @@ Use this for: totals, averages, filtering, trend analysis, cost projections, gro
 - Format with Markdown: tables for comparisons, bold for key numbers, headers for sections.
 '''
 
-_TOOLS = [call_aws_api, execute_python]
+_TOOLS = [call_aws_api, execute_python, forecast_costs]
 
 
 def build_chat_agent(checkpointer, aws_ctx: dict | None = None):
