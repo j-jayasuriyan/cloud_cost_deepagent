@@ -34,6 +34,7 @@ Thumbs.db
 .langchain.db
 langchain_cache/
 
-# Chat history and LangGraph checkpoint databases
-chat_history.db
-langgraph.db
+# Chat history and LangGraph checkpoint databases, including WAL-mode
+# sidecar files (-wal, -shm) and rollback-journal temp files (-journal)
+chat_history.db*
+langgraph.db*
