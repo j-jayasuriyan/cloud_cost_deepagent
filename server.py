@@ -542,11 +542,11 @@ async def run_analysis(request: Request):
                 elif ctype == "AIMessage":
                     for tc in getattr(chunk, "tool_calls", None) or []:
                         name = tc.get("name", "")
-                        if name in ("call_aws_api", "execute_python"):
+                        if name in ("call_aws_api", "execute_python", "forecast_costs"):
                             args = tc.get("args", {})
                             log = (
                                 f"{args.get('service','')}.{args.get('operation','')}"
-                                if name == "call_aws_api" else "execute_python"
+                                if name == "call_aws_api" else name
                             )
                             state["logs"].append(log)
                             yield _sse("log", log)

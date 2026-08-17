@@ -1122,34 +1122,9 @@
   }
 
   const TOOL_LABELS = {
-    get_ec2_inventory: 'EC2 inventory',
-    analyze_ec2_rightsizing: 'EC2 rightsizing',
-    get_elastic_ips: 'Elastic IPs',
-    get_ebs_volumes: 'EBS volumes',
-    get_ebs_snapshots: 'EBS snapshots',
-    get_unused_amis: 'Unused AMIs',
-    analyze_ebs_optimization: 'EBS analysis',
-    get_rds_inventory: 'RDS inventory',
-    get_rds_reserved_instances: 'RDS RIs',
-    analyze_rds_rightsizing: 'RDS rightsizing',
-    get_s3_inventory: 'S3 buckets',
-    analyze_s3_optimization: 'S3 analysis',
-    get_load_balancers: 'Load balancers',
-    get_nat_gateways: 'NAT Gateways',
-    get_data_transfer_costs: 'Data transfer',
-    analyze_network_optimization: 'Network analysis',
-    get_lambda_inventory: 'Lambda functions',
-    analyze_lambda_optimization: 'Lambda analysis',
-    get_cloudwatch_log_groups: 'Log groups',
-    get_cloudwatch_custom_metrics: 'CW metrics',
-    get_cloudwatch_alarms: 'CW alarms',
-    analyze_cloudwatch_optimization: 'CloudWatch analysis',
-    get_current_spend_summary: 'Spend summary',
-    get_active_savings_plans: 'Savings Plans',
-    get_active_reserved_instances: 'Reserved Instances',
-    get_coverage_analysis: 'RI/SP coverage',
-    analyze_savings_plan_recommendations: 'SP recommendations',
+    call_aws_api: '☁ Calling AWS',
     execute_python: '⚙ Running analysis',
+    forecast_costs: '📈 Forecasting costs',
   };
 
   // ── Main send function ─────────────────────────────────────────────────────
@@ -1725,7 +1700,7 @@
 
           } else if (ev.type === 'tool_end') {
             // Only count completions for our tracked tools (filter built-ins)
-            if (ev.data === 'call_aws_api' || ev.data === 'execute_python') {
+            if (ev.data === 'call_aws_api' || ev.data === 'execute_python' || ev.data === 'forecast_costs') {
               _logDoneCount = Math.min(_logDoneCount + 1, _logQueue.length);
               _renderLog();
             }

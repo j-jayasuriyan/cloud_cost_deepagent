@@ -236,28 +236,38 @@ _CANDIDATES = (
     _Candidate("naive_average", 3, _fit_naive, _forecast_naive),
     _Candidate("linear_trend", 3, _fit_linear, _forecast_linear),
     _Candidate("simple_exponential_smoothing", 4, _fit_ses, _forecast_statsmodels),
+    _Candidate("gaussian_process", 5, _fit_gp, _forecast_gp),
     _Candidate("holt_linear_trend", 8, _fit_holt, _forecast_statsmodels),
 )
 ```
 
 - Runs directly in the FastAPI process, like `call_aws_api` — **not** through
   `execute_python`'s sandboxed subprocess. It needs no AWS/network access, so the
-  sandbox's isolation buys nothing, and its `numpy`/`statsmodels` imports plus fitting
-  several models would be tight against that sandbox's 10 s timeout.
+  sandbox's isolation buys nothing, and its `numpy`/`statsmodels`/`scikit-learn`
+  imports plus fitting several models would be tight against that sandbox's 10 s
+  timeout.
 - `min_history` per candidate gates which models are even considered for a given
-  series length — `simple_exponential_smoothing` needs ≥4 months, `holt_linear_trend`
-  needs ≥8. Below 3 months total, the tool returns an error rather than guessing.
+  series length — `simple_exponential_smoothing` needs ≥4 months, `gaussian_process`
+  needs ≥5, `holt_linear_trend` needs ≥8. Below 3 months total, the tool returns an
+  error rather than guessing.
+- `gaussian_process` is the one candidate that doesn't assume a fixed shape (line,
+  flat level, or smoothed trend) — it fits a kernel via marginal-likelihood
+  optimization and can track a curve. Negligible fitting cost even at the 37-month
+  ceiling (a 37×37 covariance matrix). When it wins, the response also includes
+  `forecast_std` — real per-month uncertainty via `gp.predict(..., return_std=True)`
+  in `_gp_forecast_std` — the only candidate that can honestly provide this.
 - No seasonal component at all — Cost Explorer's real ceiling is 37 months (its own
   API error confirms this: `ValidationException: ...maximum data available is 37
   months`), barely 3 yearly cycles, thin enough that a seasonal fit would be closer to
   memorizing noise than learning a pattern. See [`Architecture.md` §9](Architecture.md#9-cost-forecasting--adaptive-model-selection)
   for the full reasoning.
 - Returns `{"model", "backtest_mae", "backtest_folds", "forecast", "history_months_used",
-  "candidates", "note"}` — `candidates` lists *every* model considered, including ones
-  not applicable to this much history and why (e.g. `holt_linear_trend` marked
-  `"applicable": false"` with a `"needs >= 8 months..."` reason below that threshold).
-  The system prompt instructs the agent to summarize this whole comparison — not just
-  announce the winner — specifically so a flat forecast doesn't read as "nothing ran".
+  "candidates", "note"}`, plus `"forecast_std"` when `gaussian_process` wins —
+  `candidates` lists *every* model considered, including ones not applicable to this
+  much history and why (e.g. `holt_linear_trend` marked `"applicable": false"` with a
+  `"needs >= 8 months..."` reason below that threshold). The system prompt instructs
+  the agent to summarize this whole comparison — not just announce the winner —
+  specifically so a flat forecast doesn't read as "nothing ran".
 - Also printed to stdout on every call (`[forecast_costs] history=... candidates=...
   selected=...`) — visible in the terminal locally or `journalctl -u cost-advisor` when
   deployed, for checking what happened without needing to ask the agent.

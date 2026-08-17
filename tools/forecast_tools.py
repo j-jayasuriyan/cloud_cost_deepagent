@@ -11,6 +11,8 @@ from typing import Callable
 
 import numpy as np
 from langchain_core.tools import tool
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel, WhiteKernel
 from statsmodels.tsa.holtwinters import Holt, SimpleExpSmoothing
 
 _MIN_BACKTEST_TRAIN = 2
@@ -52,6 +54,41 @@ def _forecast_statsmodels(model, horizon: int) -> list[float]:
     return model.forecast(horizon).tolist()
 
 
+def _fit_gp(train: list[float]) -> tuple[GaussianProcessRegressor, int, float, float]:
+    """Fits a kernel (smoothness + noise level, both learned from the data
+    via marginal-likelihood optimization) rather than assuming a fixed
+    functional form the way every other candidate does. x/y are normalized
+    first — GPs are sensitive to the input scale, and cost totals can be in
+    the thousands while the kernel's default length-scale assumes ~O(1).
+    """
+    x = np.arange(len(train)).reshape(-1, 1)
+    y = np.asarray(train, dtype=float)
+    y_mean, y_std = y.mean(), y.std() or 1.0
+    kernel = ConstantKernel(1.0) * RBF(length_scale=1.0) + WhiteKernel(noise_level=0.1)
+    gp = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=3)
+    gp.fit(x, (y - y_mean) / y_std)
+    return (gp, len(train), y_mean, y_std)
+
+
+def _forecast_gp(model: tuple[GaussianProcessRegressor, int, float, float], horizon: int) -> list[float]:
+    gp, n, y_mean, y_std = model
+    x_future = np.arange(n, n + horizon).reshape(-1, 1)
+    pred_norm = gp.predict(x_future)
+    return (pred_norm * y_std + y_mean).tolist()
+
+
+def _gp_forecast_std(model: tuple[GaussianProcessRegressor, int, float, float], horizon: int) -> list[float]:
+    """Uncertainty band for the GP forecast — none of the other candidates
+    can honestly provide this; a fixed-form model doesn't know how much it
+    doesn't know. Only meaningful for the GP, so called separately from the
+    uniform fit/forecast interface every candidate shares.
+    """
+    gp, n, _y_mean, y_std = model
+    x_future = np.arange(n, n + horizon).reshape(-1, 1)
+    _pred_norm, std_norm = gp.predict(x_future, return_std=True)
+    return (std_norm * y_std).tolist()
+
+
 @dataclass(frozen=True)
 class _Candidate:
     name: str
@@ -67,6 +104,7 @@ _CANDIDATES = (
     _Candidate("naive_average", 3, _fit_naive, _forecast_naive),
     _Candidate("linear_trend", 3, _fit_linear, _forecast_linear),
     _Candidate("simple_exponential_smoothing", 4, _fit_ses, _forecast_statsmodels),
+    _Candidate("gaussian_process", 5, _fit_gp, _forecast_gp),
     _Candidate("holt_linear_trend", 8, _fit_holt, _forecast_statsmodels),
 )
 
@@ -138,12 +176,12 @@ def forecast_costs(monthly_costs: str, periods_ahead: int = 6) -> str:
     Forecast future monthly costs from historical monthly totals.
 
     Fits every model the history can support (naive average, linear trend,
-    simple exponential smoothing, Holt's linear trend — each gated by how
-    much history is available), backtests each with one-step-ahead
-    walk-forward validation, and returns whichever had the lowest backtest
-    error. No seasonal modeling — monthly cost history rarely spans enough
-    years for a model to learn a real seasonal pattern honestly; claiming
-    one would be false precision.
+    simple exponential smoothing, Gaussian process regression, Holt's linear
+    trend — each gated by how much history is available), backtests each
+    with one-step-ahead walk-forward validation, and returns whichever had
+    the lowest backtest error. No seasonal modeling — monthly cost history
+    rarely spans enough years for a model to learn a real seasonal pattern
+    honestly; claiming one would be false precision.
 
     Args:
         monthly_costs: JSON array of historical monthly totals, oldest
@@ -158,7 +196,9 @@ def forecast_costs(monthly_costs: str, periods_ahead: int = 6) -> str:
         "forecast": [...], "history_months_used": ..., "candidates": [...], "note": "..."}
         `candidates` lists every model considered, including ones not applicable
         to this much history (with why) — always report this comparison when
-        presenting a forecast, not just the winning model.
+        presenting a forecast, not just the winning model. When the winning
+        model is `gaussian_process`, the result also includes `forecast_std` —
+        real uncertainty per future month, not available from the other models.
         On failure: {"error": "..."}
     """
     try:
@@ -180,18 +220,10 @@ def forecast_costs(monthly_costs: str, periods_ahead: int = 6) -> str:
     evaluations = _evaluate_all(series)
     winner = _select_winner(evaluations)
     candidate = next(c for c in _CANDIDATES if c.name == winner["model"])
-    forecast = candidate.forecast(candidate.fit(series), periods_ahead)
+    fitted = candidate.fit(series)
+    forecast = candidate.forecast(fitted, periods_ahead)
 
-    # Printed (not `logging`) to match this codebase's existing convention
-    # for runtime diagnostics — see deployment.py's startup checks. Shows up
-    # in the terminal locally, or `journalctl -u cost-advisor` when deployed.
-    print(
-        f"[forecast_costs] history={len(series)}mo periods_ahead={periods_ahead} "
-        f"candidates={evaluations} selected={winner['model']}",
-        flush=True,
-    )
-
-    return json.dumps({
+    result = {
         "model": winner["model"],
         "backtest_mae": winner["backtest_mae"],
         "backtest_folds": winner["backtest_folds"],
@@ -205,4 +237,22 @@ def forecast_costs(monthly_costs: str, periods_ahead: int = 6) -> str:
             "not applicable to this much history and why. No seasonal component — "
             "insufficient history to fit one honestly."
         ),
-    })
+    }
+
+    if winner["model"] == "gaussian_process":
+        result["forecast_std"] = [round(v, 2) for v in _gp_forecast_std(fitted, periods_ahead)]
+        result["note"] += (
+            " 'forecast_std' is real uncertainty per month from the fitted kernel — "
+            "the other candidates can't honestly provide this."
+        )
+
+    # Printed (not `logging`) to match this codebase's existing convention
+    # for runtime diagnostics — see deployment.py's startup checks. Shows up
+    # in the terminal locally, or `journalctl -u cost-advisor` when deployed.
+    print(
+        f"[forecast_costs] history={len(series)}mo periods_ahead={periods_ahead} "
+        f"candidates={evaluations} selected={winner['model']}",
+        flush=True,
+    )
+
+    return json.dumps(result)

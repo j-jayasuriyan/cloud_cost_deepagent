@@ -67,7 +67,8 @@ def should_report_which_model_was_selected():
     result = run([100, 110, 120, 130])
 
     assert result["model"] in {
-        "naive_average", "linear_trend", "simple_exponential_smoothing", "holt_linear_trend"
+        "naive_average", "linear_trend", "simple_exponential_smoothing",
+        "gaussian_process", "holt_linear_trend",
     }
 
 
@@ -95,7 +96,7 @@ def should_pick_trend_aware_model_when_data_has_a_clear_linear_trend():
 
     result = run(trending, periods_ahead=3)
 
-    assert result["model"] in {"linear_trend", "holt_linear_trend"}
+    assert result["model"] in {"linear_trend", "holt_linear_trend", "gaussian_process"}
     # Forecast should keep climbing, not flatten out like a plain average would.
     assert result["forecast"][0] > trending[-1]
     assert result["forecast"][-1] > result["forecast"][0]
@@ -133,7 +134,8 @@ def should_list_every_candidate_model_in_the_output():
 
     names = {c["model"] for c in result["candidates"]}
     assert names == {
-        "naive_average", "linear_trend", "simple_exponential_smoothing", "holt_linear_trend"
+        "naive_average", "linear_trend", "simple_exponential_smoothing",
+        "gaussian_process", "holt_linear_trend",
     }
 
 
@@ -159,3 +161,53 @@ def should_give_applicable_candidates_a_backtest_score():
     applicable = [c for c in result["candidates"] if c["applicable"]]
     assert len(applicable) >= 2  # naive_average and linear_trend at minimum
     assert all("backtest_mae" in c and "backtest_folds" in c for c in applicable)
+
+
+def should_mark_gaussian_process_as_not_applicable_under_five_months():
+    result = run([100, 110, 120, 130])  # 4 months, gaussian_process needs >= 5
+
+    gp = next(c for c in result["candidates"] if c["model"] == "gaussian_process")
+    assert gp["applicable"] is False
+    assert "5" in gp["reason"]
+
+
+def should_mark_gaussian_process_as_applicable_at_five_months():
+    result = run([100, 110, 120, 130, 140])
+
+    gp = next(c for c in result["candidates"] if c["model"] == "gaussian_process")
+    assert gp["applicable"] is True
+    assert "backtest_mae" in gp
+
+
+def should_pick_gaussian_process_when_trend_is_clearly_nonlinear():
+    # An accelerating curve — a straight line underfits this; GP's smooth,
+    # non-parametric kernel should track the curvature better than any
+    # fixed-form candidate and win the backtest comparison.
+    curved = [1000, 1050, 1150, 1350, 1700, 2300, 3200]
+
+    result = run(curved, periods_ahead=2)
+
+    assert result["model"] == "gaussian_process"
+    linear = next(c for c in result["candidates"] if c["model"] == "linear_trend")
+    gp = next(c for c in result["candidates"] if c["model"] == "gaussian_process")
+    assert gp["backtest_mae"] < linear["backtest_mae"]
+
+
+def should_include_forecast_std_when_gaussian_process_wins():
+    curved = [1000, 1050, 1150, 1350, 1700, 2300, 3200]
+
+    result = run(curved, periods_ahead=3)
+
+    assert result["model"] == "gaussian_process"
+    assert "forecast_std" in result
+    assert len(result["forecast_std"]) == 3
+    assert all(v >= 0 for v in result["forecast_std"])
+
+
+def should_not_include_forecast_std_when_gaussian_process_does_not_win():
+    trending = [1000, 1200, 1400, 1600, 1800, 2000, 2200, 2400]  # exact line, linear_trend wins
+
+    result = run(trending, periods_ahead=3)
+
+    assert result["model"] != "gaussian_process"
+    assert "forecast_std" not in result

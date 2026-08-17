@@ -10,7 +10,7 @@ flowchart LR
     U(["👤 User asks<br/>a question"]) --> S["⚙️ FastAPI<br/>server.py"]
     S --> A["🧠 DeepAgent<br/>Claude Haiku 4.5"]
 
-    A -->|"I need data"| T["🔧 Tools<br/>call_aws_api<br/>execute_python"]
+    A -->|"I need data"| T["🔧 Tools<br/>call_aws_api<br/>execute_python<br/>forecast_costs"]
     T --> AWS["☁️ AWS<br/>account"]
     AWS -->|"raw JSON"| T
     T -->|"result"| A
@@ -104,6 +104,7 @@ flowchart TB
         direction LR
         AWSAPI["call_aws_api"]
         PYEXEC["execute_python"]
+        FORECAST["forecast_costs<br/><i>runs in-process, no AWS/subprocess</i>"]
         BUILTIN["9 DeepAgents built-ins<br/><i>write_todos, task, filesystem</i>"]
     end
 
@@ -148,32 +149,33 @@ flowchart TB
 | UI | `static/index.html` | Chat panel + analysis panel, SSE consumption, Markdown rendering |
 | Server | `server.py` | Routing, SSE framing, analysis-JSON extraction, session CRUD |
 | Agent | `agents/chat_agent.py` | Model config, system prompt, tool registration |
-| Tools | `tools/aws_api.py`, `tools/python_repl.py` | AWS access, computation |
+| Tools | `tools/aws_api.py`, `tools/python_repl.py`, `tools/forecast_tools.py` | AWS access, computation, forecasting |
 | Persistence | `chat_db.py` + LangGraph checkpointer | Two SQLite databases |
 
 ---
 
 ## 3. What `create_deep_agent` builds
 
-The call in [`agents/chat_agent.py:89`](../agents/chat_agent.py#L89) is deliberately minimal:
+The call in [`agents/chat_agent.py:129`](../agents/chat_agent.py#L129) is deliberately minimal:
 
 ```python
 create_deep_agent(
     model=model,                 # ChatBedrockConverse — Claude Haiku 4.5
-    tools=_TOOLS,                # [call_aws_api, execute_python]
+    tools=_TOOLS,                # [call_aws_api, execute_python, forecast_costs]
     checkpointer=checkpointer,   # AsyncSqliteSaver → langgraph.db
     system_prompt=_SYSTEM_PROMPT + context_block,
 )
 ```
 
 Four arguments. DeepAgents 0.6.12 expands that into a compiled LangGraph state machine
-with **11 registered tools** — the 2 supplied plus 9 injected by default middleware:
+with **12 registered tools** — the 3 supplied plus 9 injected by default middleware:
 
 ```mermaid
 flowchart LR
     subgraph CUSTOM["Supplied by this project"]
         T1["call_aws_api"]
         T2["execute_python"]
+        T3["forecast_costs (§9)"]
     end
 
     subgraph INJECTED["Injected by DeepAgents middleware"]
@@ -183,7 +185,7 @@ flowchart LR
         M3["<b>FilesystemMiddleware</b><br/>ls · read_file · write_file<br/>edit_file · glob · grep · execute"]
     end
 
-    CUSTOM --> AGENT["Compiled<br/>DeepAgent<br/><b>11 tools</b>"]
+    CUSTOM --> AGENT["Compiled<br/>DeepAgent<br/><b>12 tools</b>"]
     INJECTED --> AGENT
 
     style CUSTOM fill:#0e9267,stroke:#0a6b4c,color:#fff
@@ -201,8 +203,12 @@ flowchart LR
 
 **Architectural consequence.** Because 9 tools arrive uninvited, the frontend progress
 log cannot simply count `tool_end` events — a `write_todos` call would corrupt the
-step counter. The UI therefore filters to `call_aws_api` and `execute_python` only.
-The same holds for the analysis log in [`server.py:358`](../server.py#L358).
+step counter. The UI therefore filters to the 3 tools this project actually supplies
+(`call_aws_api`, `execute_python`, `forecast_costs`) — see the hardcoded allowlist in
+`static/index.html`'s SSE handler and the matching one in
+[`server.py:545`](../server.py#L545)'s analysis log. Both had to be updated by hand
+when `forecast_costs` was added — this allowlist doesn't discover new tools
+automatically, which is worth remembering the next time a tool is added here.
 
 > **Note.** `task` and `execute` are registered but not exercised by current prompts.
 > `execute` in particular is a shell-execution capability that is present and reachable —
@@ -309,7 +315,7 @@ zero domain-specific code.
 
 ## 6. Two request paths, one agent
 
-The agent is built **once** at server startup ([`server.py:53`](../server.py#L53)) and stored
+The agent is built **once** at server startup ([`server.py:64`](../server.py#L64)) and stored
 as `app.state.agent`. Both endpoints call `.astream()` on that same object. Three things
 differentiate them:
 
@@ -350,7 +356,7 @@ not whatever you happened to ask ten minutes earlier.
 
 **Why the prose is discarded.** The analysis endpoint reads the `execute_python`
 ToolMessage content — not the model's narration — and parses JSON out of it
-([`server.py:370`](../server.py#L370)). The prompt ends with *"execute_python must be your
+([`server.py:558`](../server.py#L558)). The prompt ends with *"execute_python must be your
 FINAL action. Print ONLY the JSON."* Three fallback parse strategies handle the cases
 where the model wraps it in a code fence or adds commentary anyway.
 
@@ -404,7 +410,7 @@ Both are auto-created on first run and listed in `.gitignore`.
   which is why evaluation needs seeded fixtures and multi-run scoring rather than
   single-shot assertions
 - **Unbounded blast radius** — `call_aws_api` has no operation allowlist
-  ([`tools/aws_api.py:47`](../tools/aws_api.py#L47) does `getattr(client, operation)`), so
+  ([`tools/aws_api.py:116`](../tools/aws_api.py#L116) does `getattr(client, operation)`), so
   IAM policy is the only thing preventing a destructive call
 - **`execute_python` is not sandboxed** despite its docstring — it is a plain
   `subprocess.run` sharing the user, environment, filesystem, and network, with AWS
@@ -440,6 +446,7 @@ flowchart LR
         N["naive_average\n(>=3 months)"]
         L["linear_trend\n(>=3 months)"]
         S["simple_exponential_smoothing\n(>=4 months)"]
+        G["gaussian_process\n(>=5 months)"]
         HO["holt_linear_trend\n(>=8 months)"]
     end
 
@@ -474,6 +481,42 @@ fitting several models; and `forecast_costs` needs no AWS or network access, so 
 sandbox's isolation guarantees buy nothing here anyway. See
 [`tools/forecast_tools.py`](../tools/forecast_tools.py) and
 [`tests/test_forecast_tools.py`](../tests/test_forecast_tools.py).
+
+**Precision on the word "ML".** Worth being exact about what's actually happening,
+since "adaptive model selection" can sound like more than it is. The five candidates
+span a real spectrum, not five equally-sophisticated models:
+
+| Candidate | What it is |
+|---|---|
+| `naive_average` | `statistics.mean()` — pure calculation, nothing fitted |
+| `linear_trend` | Closed-form least squares (`numpy.polyfit`) — a fitted model, solved directly, no iteration |
+| `simple_exponential_smoothing` | A smoothing parameter numerically optimized (MLE) against forecast error — genuine iterative fitting |
+| `gaussian_process` | A kernel (smoothness + noise level) fit by maximizing marginal likelihood — doesn't assume a fixed functional form the way the other four do; can track a curve, not just a line or a flat/smoothed level |
+| `holt_linear_trend` | Level + trend jointly optimized via MLE, still a fixed linear form |
+
+This is **classical statistical time-series forecasting** — the field ARIMA and
+exponential smoothing live in — not deep learning; even `gaussian_process`, the most
+flexible candidate here, is a small-data kernel method, not a trained neural net. The
+part that's genuinely adaptive isn't any one model; it's the backtesting-driven
+*selection* — which model to trust is learned from this specific series via held-out
+validation error, not hardcoded. That selection step is real; the individual models
+range from arithmetic, to fixed-form optimized fits, to `gaussian_process`'s
+non-parametric fit — the only candidate that can represent a curve without being told
+its shape in advance, and the only one honest about its own uncertainty
+(`forecast_std`, surfaced only when it wins — see `tools/forecast_tools.py`'s
+`_gp_forecast_std`).
+
+**Why Gaussian process regression specifically, and not a heavier ML model.**
+GPs are one of the few ML techniques that get *more* reliable with *less* data, not
+less — the opposite of deep learning, which needs orders of magnitude more than the
+37-month ceiling this problem has. Fitting cost is negligible (the covariance matrix
+being inverted is at most 37×37); no GPU, no heavy dependency (`scikit-learn` only),
+and it plugs into the exact same backtest/select machinery as every other candidate
+with zero changes to that machinery — see `_CANDIDATES` in `tools/forecast_tools.py`.
+A pretrained time-series foundation model (e.g. Amazon's Chronos) was considered and
+set aside: real added infrastructure weight (PyTorch-class dependencies, more RAM than
+the current `t3.small` comfortably offers) for an uncertain payoff on a series this
+short — those models are built for richer data than a dozen-odd monthly totals.
 
 ---
 

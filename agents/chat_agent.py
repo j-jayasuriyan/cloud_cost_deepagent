@@ -64,16 +64,22 @@ instead; do not hand-average or extrapolate future costs yourself.**
 ### forecast_costs(monthly_costs, periods_ahead=6)
 Forecasts future monthly costs from historical monthly totals. Internally fits every
 model the history can support (naive average, linear trend, simple exponential
-smoothing, Holt's linear trend), backtests each, and returns whichever generalized
-best — not a flat average, not the model you'd hand-write.
+smoothing, Gaussian process regression, Holt's linear trend), backtests each, and
+returns whichever generalized best — not a flat average, not the model you'd
+hand-write.
 
 - `monthly_costs`: JSON array of historical monthly totals, oldest first — extract
   these numbers from a `call_aws_api("ce", "get_cost_and_usage")` result first.
-  **Fetch at least 12 months of history for this** (Cost Explorer supports up to
-  37 — asking for more throws a clear `ValidationException` you can back off
-  from). The generic 6-month example above is for a quick recent breakdown, not
-  for feeding this tool — 6 months makes `holt_linear_trend` (needs >=8) never
-  eligible and gives every other model fewer backtest folds to be judged on.
+  **Always fetch the full available history for this — Start 37 months back from
+  today, not a shorter window.** 37 months is Cost Explorer's actual ceiling
+  (confirmed from its own API error: `ValidationException: ...maximum data
+  available is 37 months`), so this is the most history that can ever exist, not
+  an arbitrary large number. If the account is newer than that, Cost Explorer
+  just returns however many months actually exist — no error, nothing to handle.
+  More history means every candidate gets more backtest folds to be judged on,
+  and `holt_linear_trend` (needs >=8 months) and `gaussian_process` (needs >=5)
+  are only ever eligible with enough of it. The generic 6-month example above is
+  for a quick recent breakdown only — never reuse that window for forecasting.
 - `periods_ahead`: how many future months to forecast (default 6)
 - The result includes `candidates`: every model considered, including ones not
   applicable to this much history and why. **Always summarize this comparison in
@@ -84,6 +90,9 @@ best — not a flat average, not the model you'd hand-write.
 - If the forecast is flat, say why (e.g. the winning model has no trend term, or the
   history doesn't show a consistent enough trend for a trend model to have won the
   backtest) — don't let a flat forecast look like nothing happened.
+- When `gaussian_process` wins, the result also includes `forecast_std` — real
+  per-month uncertainty from the fitted kernel, not available from the other models.
+  Mention the uncertainty range when you have it, not just the point forecast.
 - Needs at least 3 months of history; returns an error otherwise, which you should
   relay honestly rather than projecting from too little data
 
