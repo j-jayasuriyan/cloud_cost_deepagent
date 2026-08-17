@@ -1,5 +1,4 @@
 import os
-from datetime import date
 from langchain_aws import ChatBedrockConverse
 from deepagents import create_deep_agent
 
@@ -72,17 +71,17 @@ _TOOLS = [call_aws_api, execute_python]
 def build_chat_agent(checkpointer, aws_ctx: dict | None = None):
     ctx = aws_ctx or {}
     region = ctx.get("region", os.environ.get("AWS_DEFAULT_REGION", "us-east-1"))
-    today  = date.today().isoformat()
 
-    # The account under analysis is per-request, not per-process: different users
-    # can supply credentials for different accounts against this one agent.
-    context_block = f"""
+    # The account under analysis — and today's date — are per-request, not
+    # per-process. This function runs once at server startup; anything baked
+    # in here (like a literal today's date) would go stale for as long as the
+    # server stays up. Both are stated fresh in server.py's _account_preamble()
+    # on every request instead.
+    context_block = """
 ## Current AWS Session
-- **Today's date**: {today}
-
-The account ID and region under analysis are stated at the top of each request.
-Use them directly — do NOT call APIs to look them up.
-Always use {today} as the end date when constructing date ranges for AWS API calls.
+The account ID, region, and today's date under analysis are stated at the top
+of each request. Use them directly — do NOT call APIs, and do NOT rely on
+training data, to determine any of them.
 """
     model = ChatBedrockConverse(model_id=_MODEL_ID, region_name=region, timeout=300)
     return create_deep_agent(

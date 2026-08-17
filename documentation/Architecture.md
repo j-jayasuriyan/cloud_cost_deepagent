@@ -241,8 +241,11 @@ sequenceDiagram
 
 1. **Context assembly** — the checkpointer rehydrates the full prior conversation for
    this `thread_id`, so turn 5 still knows what turn 1 fetched.
-2. **Decision** — the model sees the system prompt (tool docs + account ID + region +
-   today's date) and decides which tool to call, or that it has enough to answer.
+2. **Decision** — the model sees the system prompt (tool docs) plus the account ID,
+   region, and today's date prepended fresh to the message on every request — never
+   baked into the system prompt itself, since that's built once at process startup
+   and would otherwise go stale — and decides which tool to call, or that it has
+   enough to answer.
 3. **Dispatch** — LangGraph routes to the tool node and appends the result as a
    `ToolMessage`.
 4. **Termination** — the loop exits when the model returns an `AIMessage` with no

@@ -144,37 +144,47 @@ create_deep_agent(
 
 ### Context block
 
-Injected once at build time (server startup) with the one fact that's genuinely
-static for the process lifetime — today's date:
+Injected once at build time (server startup), and deliberately contains
+**no facts that could go stale or leak across sessions** — no account ID, no
+region, no date:
 
 ```
 ## Current AWS Session
-- Today's date: 2026-08-14
-
-The account ID and region under analysis are stated at the top of each request.
-Use them directly — do NOT call APIs to look them up.
-Always use 2026-08-14 as the end date when constructing date ranges for AWS API calls.
+The account ID, region, and today's date under analysis are stated at the top
+of each request. Use them directly — do NOT call APIs, and do NOT rely on
+training data, to determine any of them.
 ```
 
-`today` is fixed at startup so the agent uses the correct end date for Cost
-Explorer queries (its training knowledge stops earlier). The **account ID is
-deliberately not in this block** — a single agent instance is shared by every
-login session, and different sessions can have different AWS keys entered
-against different accounts. Baking an account ID in at startup would leak one
-user's account into another's answers.
+**Why not the account ID:** a single agent instance is shared by every login
+session, and different sessions can have different AWS keys entered against
+different accounts. Baking an account ID in at startup would leak one user's
+account into another's answers.
 
-Instead, `server.py`'s `_account_preamble()` resolves the *current* session's
-account via STS and prepends it to each individual request:
+**Why not today's date either — this used to be baked in here, and it was a
+real bug.** An earlier version set `today = date.today().isoformat()` once,
+at `build_chat_agent()` time, and embedded it directly in this block. Since
+`build_chat_agent()` runs exactly once per process (in `server.py`'s
+`lifespan`), that date only reflected reality on the day the server was
+started — a long-lived process (weeks of uptime, common for a small
+single-instance deployment) would silently keep answering as if it were
+still that day, producing wrong Cost Explorer date ranges with no error or
+warning. Fixed by moving the date to the same per-request mechanism as the
+account ID.
+
+`server.py`'s `_account_preamble()` resolves the *current* session's account
+via STS and computes `date.today()` fresh, prepending both to each
+individual request:
 
 ```
-[AWS context — account 111122223333, region us-east-1. Use these directly; do not look them up.]
+[AWS context — account 111122223333, region us-east-1, today's date 2026-08-17. Use these directly; do not look them up.]
 
 <the user's actual message>
 ```
 
-This runs on every `/chat` and `/analysis/run` call, so it always reflects
-whichever credentials that login session has entered most recently (see
-`credentials.py`, `aws_session.py`).
+This runs on every `/chat` and `/analysis/run` call, so both the account and
+the date always reflect reality at request time — not whatever they were
+when the process happened to start (see `credentials.py`, `aws_session.py`
+for the account-resolution side).
 
 ### Model
 

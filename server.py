@@ -286,16 +286,20 @@ async def delete_all_sessions():
 
 def _account_preamble(session: str | None) -> str:
     """
-    Stated per request because each login session may target a different account.
-    The agent's system prompt deliberately carries no account ID.
+    Stated per request, not baked into the agent's system prompt at startup.
+    Account/region because each login session may target a different account;
+    today's date because the agent (and its system prompt) is built once at
+    process startup and would otherwise go stale for as long as the server
+    stays up — see agents/chat_agent.py's build_chat_agent().
     """
+    today = date.today().isoformat()
     try:
         ctx = _fetch_account_context(session)
     except RuntimeError as e:
-        return f"[AWS context unavailable: {e}]\n\n"
+        return f"[AWS context unavailable: {e}. Today's date: {today}.]\n\n"
     return (
-        f"[AWS context — account {ctx['account_id']}, region {ctx['region']}. "
-        f"Use these directly; do not look them up.]\n\n"
+        f"[AWS context — account {ctx['account_id']}, region {ctx['region']}, "
+        f"today's date {today}. Use these directly; do not look them up.]\n\n"
     )
 
 
